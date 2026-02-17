@@ -29,7 +29,7 @@ impl GameServer {
 
     pub async fn handle_connection(&self, stream: TcpStream, addr: SocketAddr) {
         let player_id = Uuid::new_v4().to_string();
-        log::info!("New connection from {}, assigned ID: {}", addr, player_id);
+        log::info!("New connection from {addr}, assigned ID: {player_id}");
 
         let ws_handler = WebSocketHandler::new(
             stream,
@@ -40,7 +40,7 @@ impl GameServer {
         ).await;
 
         if let Err(e) = ws_handler {
-            log::error!("Failed to create WebSocket handler: {}", e);
+            log::error!("Failed to create WebSocket handler: {e}");
             return;
         }
 

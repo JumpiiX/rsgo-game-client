@@ -22,11 +22,11 @@ impl MessageBroadcaster {
         self.connections.lock().unwrap().remove(player_id);
     }
 
-    pub async fn broadcast_message(&self, message: ServerMessage, exclude_id: Option<&str>) {
-        let msg_json = serde_json::to_string(&message).unwrap();
+    pub fn broadcast_message(&self, message: &ServerMessage, exclude_id: Option<&str>) {
+        let msg_json = serde_json::to_string(message).unwrap();
         let connections = self.connections.lock().unwrap().clone();
         
-        for (id, sender) in connections.iter() {
+        for (id, sender) in &connections {
             if let Some(exclude) = exclude_id {
                 if id == exclude {
                     continue;
@@ -37,10 +37,10 @@ impl MessageBroadcaster {
         }
     }
 
-    pub fn send_to_player(&self, player_id: &str, message: ServerMessage) {
+    pub fn send_to_player(&self, player_id: &str, message: &ServerMessage) {
         let connections = self.connections.lock().unwrap();
         if let Some(sender) = connections.get(player_id) {
-            let msg_json = serde_json::to_string(&message).unwrap();
+            let msg_json = serde_json::to_string(message).unwrap();
             let _ = sender.send(msg_json);
         }
     }

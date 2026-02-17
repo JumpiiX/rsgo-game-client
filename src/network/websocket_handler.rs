@@ -58,7 +58,7 @@ impl WebSocketHandler {
             match msg {
                 Ok(Message::Text(text)) => {
                     if let Ok(client_msg) = serde_json::from_str::<ClientMessage>(&text) {
-                        self.message_handler.handle_message(&self.player_id, client_msg).await;
+                        self.message_handler.handle_message(&self.player_id, client_msg);
                     }
                 }
                 Ok(Message::Close(_)) | Err(_) => break,
@@ -71,9 +71,9 @@ impl WebSocketHandler {
         self.player_manager.remove_player(&self.player_id);
         
         self.message_broadcaster.broadcast_message(
-            ServerMessage::PlayerLeft { player_id: self.player_id.clone() },
+            &ServerMessage::PlayerLeft { player_id: self.player_id.clone() },
             None
-        ).await;
+);
 
         log::info!("Player {} disconnected", self.player_id);
     }

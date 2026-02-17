@@ -28,8 +28,4 @@ impl SpawnSystem {
         let spawn_index = player_count % self.spawn_positions.len();
         self.spawn_positions[spawn_index]
     }
-
-    pub fn add_spawn_position(&mut self, position: (f32, f32, f32)) {
-        self.spawn_positions.push(position);
-    }
 }
