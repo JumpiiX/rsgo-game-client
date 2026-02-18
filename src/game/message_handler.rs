@@ -29,8 +29,8 @@ impl MessageHandler {
             ClientMessage::Move { x, y, z, rotation_x, rotation_y } => {
                 self.handle_move(player_id, x, y, z, rotation_x, rotation_y);
             }
-            ClientMessage::Shoot { target_x, target_y, target_z } => {
-                self.handle_shoot(player_id, target_x, target_y, target_z);
+            ClientMessage::Shoot { start_x, start_y, start_z, target_x, target_y, target_z } => {
+                self.handle_shoot(player_id, start_x, start_y, start_z, target_x, target_y, target_z);
             }
             ClientMessage::Hit { target_player_id, killed } => {
                 self.handle_hit(player_id, target_player_id, killed);
@@ -76,21 +76,19 @@ impl MessageHandler {
 );
     }
 
-    fn handle_shoot(&self, player_id: &str, target_x: f32, target_y: f32, target_z: f32) {
-        if let Some(shooter) = self.player_manager.get_player(player_id) {
-            self.message_broadcaster.broadcast_message(
-                &ServerMessage::PlayerShot {
-                    shooter_id: player_id.to_string(),
-                    start_x: shooter.x,
-                    start_y: shooter.y,
-                    start_z: shooter.z,
-                    target_x,
-                    target_y,
-                    target_z,
-                },
-                Some(player_id)
-    );
-        }
+    fn handle_shoot(&self, player_id: &str, start_x: f32, start_y: f32, start_z: f32, target_x: f32, target_y: f32, target_z: f32) {
+        self.message_broadcaster.broadcast_message(
+            &ServerMessage::PlayerShot {
+                shooter_id: player_id.to_string(),
+                start_x,
+                start_y,
+                start_z,
+                target_x,
+                target_y,
+                target_z,
+            },
+            Some(player_id)
+        );
     }
 
     fn handle_hit(&self, _shooter_id: &str, target_player_id: String, killed: bool) {

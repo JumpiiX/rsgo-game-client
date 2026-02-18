@@ -9,7 +9,7 @@ pub enum ClientMessage {
     #[serde(rename = "move")]
     Move { x: f32, y: f32, z: f32, rotation_x: f32, rotation_y: f32 },
     #[serde(rename = "shoot")]
-    Shoot { target_x: f32, target_y: f32, target_z: f32 },
+    Shoot { start_x: f32, start_y: f32, start_z: f32, target_x: f32, target_y: f32, target_z: f32 },
     #[serde(rename = "hit")]
     Hit { target_player_id: String, killed: bool },
 }
