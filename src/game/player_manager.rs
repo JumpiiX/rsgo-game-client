@@ -39,4 +39,34 @@ impl PlayerManager {
     pub fn get_player_count(&self) -> usize {
         self.players.lock().unwrap().len()
     }
+    
+    pub fn damage_player(&self, player_id: &str, damage: i32) -> Option<(bool, i32)> {
+        let mut players = self.players.lock().unwrap();
+        if let Some(player) = players.get_mut(player_id) {
+            let died = player.take_damage(damage);
+            Some((died, player.health))
+        } else {
+            None
+        }
+    }
+    
+    pub fn add_kill_to_player(&self, player_id: &str) -> bool {
+        let mut players = self.players.lock().unwrap();
+        if let Some(player) = players.get_mut(player_id) {
+            player.add_kill();
+            true
+        } else {
+            false
+        }
+    }
+    
+    pub fn respawn_player(&self, player_id: &str, spawn_pos: (f32, f32, f32)) -> Option<Player> {
+        let mut players = self.players.lock().unwrap();
+        if let Some(player) = players.get_mut(player_id) {
+            player.respawn(spawn_pos);
+            Some(player.clone())
+        } else {
+            None
+        }
+    }
 }

@@ -11,6 +11,7 @@ pub struct Player {
     pub rotation_y: f32,
     pub health: i32,
     pub alive: bool,
+    pub kills: i32,
 }
 
 impl Player {
@@ -25,6 +26,7 @@ impl Player {
             rotation_y: 0.0,
             health: 100,
             alive: true,
+            kills: 0,
         }
     }
 
@@ -34,5 +36,28 @@ impl Player {
         self.z = z;
         self.rotation_x = rotation_x;
         self.rotation_y = rotation_y;
+    }
+    
+    pub fn take_damage(&mut self, damage: i32) -> bool {
+        self.health -= damage;
+        if self.health <= 0 {
+            self.health = 0;
+            self.alive = false;
+            true  // Player died
+        } else {
+            false  // Player still alive
+        }
+    }
+    
+    pub fn add_kill(&mut self) {
+        self.kills += 1;
+    }
+    
+    pub fn respawn(&mut self, spawn_pos: (f32, f32, f32)) {
+        self.x = spawn_pos.0;
+        self.y = spawn_pos.1;
+        self.z = spawn_pos.2;
+        self.health = 100;
+        self.alive = true;
     }
 }

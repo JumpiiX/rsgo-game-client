@@ -12,6 +12,8 @@ pub enum ClientMessage {
     Shoot { start_x: f32, start_y: f32, start_z: f32, target_x: f32, target_y: f32, target_z: f32 },
     #[serde(rename = "hit")]
     Hit { target_player_id: String, killed: bool },
+    #[serde(rename = "respawn")]
+    Respawn,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -30,7 +32,7 @@ pub enum ServerMessage {
     #[serde(rename = "player_hit")]
     PlayerHit { player_id: String, damage: i32, health: i32 },
     #[serde(rename = "player_died")]
-    PlayerDied { player_id: String },
+    PlayerDied { player_id: String, killer_id: String },
     #[serde(rename = "player_respawned")]
     PlayerRespawned { player: Player },
 }

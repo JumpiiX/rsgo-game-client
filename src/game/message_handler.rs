@@ -35,6 +35,9 @@ impl MessageHandler {
             ClientMessage::Hit { target_player_id, killed } => {
                 self.handle_hit(player_id, target_player_id, killed);
             }
+            ClientMessage::Respawn => {
+                self.handle_respawn(player_id);
+            }
         }
     }
 
@@ -91,47 +94,47 @@ impl MessageHandler {
         );
     }
 
-    fn handle_hit(&self, _shooter_id: &str, target_player_id: String, killed: bool) {
-        if killed {
-            self.message_broadcaster.broadcast_message(
-                &ServerMessage::PlayerDied { 
-                    player_id: target_player_id.clone() 
-                },
-                None
-    );
-
-            tokio::spawn({
-                let player_manager = Arc::clone(&self.player_manager);
-                let message_broadcaster = Arc::clone(&self.message_broadcaster);
-                let spawn_system = SpawnSystem::new();
-                async move {
-                    tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
-                    
-                    if let Some(mut player) = player_manager.get_player(&target_player_id) {
-                        let player_count = player_manager.get_player_count();
-                        let spawn_pos = spawn_system.get_spawn_position(player_count);
-                        player.x = spawn_pos.0;
-                        player.y = spawn_pos.1;
-                        player.z = spawn_pos.2;
-                        
-                        player_manager.update_player_position(&target_player_id, spawn_pos.0, spawn_pos.1, spawn_pos.2, 0.0, 0.0);
-                        
-                        message_broadcaster.broadcast_message(
-                            &ServerMessage::PlayerRespawned { player },
-                            None
+    fn handle_hit(&self, shooter_id: &str, target_player_id: String, _killed: bool) {
+        // Apply damage to target player
+        if let Some((died, health)) = self.player_manager.damage_player(&target_player_id, 50) {
+            if died {
+                // Give kill to shooter
+                self.player_manager.add_kill_to_player(shooter_id);
+                
+                self.message_broadcaster.broadcast_message(
+                    &ServerMessage::PlayerDied { 
+                        player_id: target_player_id.clone(),
+                        killer_id: shooter_id.to_string()
+                    },
+                    None
                 );
-                    }
-                }
-            });
-        } else {
+                
+                // Don't auto-respawn anymore, wait for player to request respawn
+            } else {
+                // Player hit but not dead
+                self.message_broadcaster.broadcast_message(
+                    &ServerMessage::PlayerHit { 
+                        player_id: target_player_id, 
+                        damage: 50, 
+                        health
+                    },
+                    None
+                );
+            }
+        }
+    }
+    
+    fn handle_respawn(&self, player_id: &str) {
+        let player_count = self.player_manager.get_player_count();
+        let spawn_pos = self.spawn_system.get_spawn_position(player_count);
+        
+        if let Some(player) = self.player_manager.respawn_player(player_id, spawn_pos) {
             self.message_broadcaster.broadcast_message(
-                &ServerMessage::PlayerHit { 
-                    player_id: target_player_id, 
-                    damage: 1, 
-                    health: 4
-                },
+                &ServerMessage::PlayerRespawned { player },
                 None
-    );
+            );
+            
+            log::info!("Player {} manually respawned at ({}, {}, {})", player_id, spawn_pos.0, spawn_pos.1, spawn_pos.2);
         }
     }
 }
