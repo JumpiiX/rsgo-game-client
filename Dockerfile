@@ -13,5 +13,6 @@ RUN apt-get update && apt-get install -y ca-certificates && rm -rf /var/lib/apt/
 WORKDIR /app
 COPY --from=builder /app/target/release/rsgo-backend ./
 
-EXPOSE 8080
+EXPOSE 6969
+ENV PORT=6969
 CMD ["./rsgo-backend"]

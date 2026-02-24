@@ -12,9 +12,11 @@ async fn main() {
     env_logger::init();
 
     let server = Arc::new(GameServer::new());
-    let listener = TcpListener::bind("127.0.0.1:8080").await.unwrap();
+    let port = std::env::var("PORT").unwrap_or_else(|_| "6969".to_string());
+    let bind_addr = format!("0.0.0.0:{}", port);
+    let listener = TcpListener::bind(&bind_addr).await.unwrap();
     
-    log::info!("Game server listening on ws://127.0.0.1:8080");
+    log::info!("Game server listening on ws://0.0.0.0:{}", port);
 
     while let Ok((stream, addr)) = listener.accept().await {
         let server_clone = Arc::clone(&server);
