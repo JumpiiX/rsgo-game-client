@@ -24,6 +24,7 @@ jobs:
           cd rsgo-backend
           docker stop rsgo-backend || true
           docker rm rsgo-backend || true
+          docker network create rsgo-shared-network 2>/dev/null || true
           docker-compose down || true
           docker-compose build --no-cache
-          docker-compose up -d
+          docker run -d --name rsgo-backend --network rsgo-shared-network -p 6969:6969 --restart unless-stopped rsgo-backend-backend:latest
