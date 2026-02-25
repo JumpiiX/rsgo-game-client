@@ -96,7 +96,7 @@ impl MessageHandler {
 
     fn handle_hit(&self, shooter_id: &str, target_player_id: String, _killed: bool) {
         // Apply damage to target player
-        if let Some((died, health)) = self.player_manager.damage_player(&target_player_id, 50) {
+        if let Some((died, health, shield)) = self.player_manager.damage_player(&target_player_id, 50) {
             if died {
                 // Give kill to shooter
                 self.player_manager.add_kill_to_player(shooter_id);
@@ -116,7 +116,8 @@ impl MessageHandler {
                     &ServerMessage::PlayerHit { 
                         player_id: target_player_id, 
                         damage: 50, 
-                        health
+                        health,
+                        shield
                     },
                     None
                 );

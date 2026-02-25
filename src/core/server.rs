@@ -4,6 +4,7 @@ use std::net::SocketAddr;
 use tokio::net::TcpStream;
 use std::sync::Arc;
 use uuid::Uuid;
+use tokio::time::{Duration, interval};
 
 pub struct GameServer {
     player_manager: Arc<PlayerManager>,
@@ -19,6 +20,28 @@ impl GameServer {
             Arc::clone(&player_manager),
             Arc::clone(&message_broadcaster),
         ));
+
+        // Start shield regeneration background task
+        let player_manager_clone = Arc::clone(&player_manager);
+        let message_broadcaster_clone = Arc::clone(&message_broadcaster);
+        tokio::spawn(async move {
+            let mut interval = interval(Duration::from_millis(100)); // Update every 100ms for smooth regen
+            loop {
+                interval.tick().await;
+                let shield_updates = player_manager_clone.update_shields();
+                
+                // Send shield updates to affected players
+                for (player_id, shield) in shield_updates {
+                    message_broadcaster_clone.send_to_player(
+                        &player_id, 
+                        &crate::network::messages::ServerMessage::ShieldUpdate { 
+                            player_id: player_id.clone(), 
+                            shield 
+                        }
+                    );
+                }
+            }
+        });
 
         Self {
             player_manager,

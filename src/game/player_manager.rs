@@ -40,11 +40,11 @@ impl PlayerManager {
         self.players.lock().unwrap().len()
     }
     
-    pub fn damage_player(&self, player_id: &str, damage: i32) -> Option<(bool, i32)> {
+    pub fn damage_player(&self, player_id: &str, damage: i32) -> Option<(bool, i32, i32)> {
         let mut players = self.players.lock().unwrap();
         if let Some(player) = players.get_mut(player_id) {
             let died = player.take_damage(damage);
-            Some((died, player.health))
+            Some((died, player.health, player.shield))
         } else {
             None
         }
@@ -68,5 +68,19 @@ impl PlayerManager {
         } else {
             None
         }
+    }
+    
+    pub fn update_shields(&self) -> Vec<(String, i32)> {
+        let mut players = self.players.lock().unwrap();
+        let mut shield_updates = Vec::new();
+        
+        for player in players.values_mut() {
+            if player.update_shield_regen() {
+                // Shield changed, add to updates
+                shield_updates.push((player.id.clone(), player.shield));
+            }
+        }
+        
+        shield_updates
     }
 }

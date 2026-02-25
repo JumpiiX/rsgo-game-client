@@ -30,9 +30,11 @@ pub enum ServerMessage {
     #[serde(rename = "player_shot")]
     PlayerShot { shooter_id: String, start_x: f32, start_y: f32, start_z: f32, target_x: f32, target_y: f32, target_z: f32 },
     #[serde(rename = "player_hit")]
-    PlayerHit { player_id: String, damage: i32, health: i32 },
+    PlayerHit { player_id: String, damage: i32, health: i32, shield: i32 },
     #[serde(rename = "player_died")]
     PlayerDied { player_id: String, killer_id: String },
     #[serde(rename = "player_respawned")]
     PlayerRespawned { player: Player },
+    #[serde(rename = "shield_update")]
+    ShieldUpdate { player_id: String, shield: i32 },
 }
