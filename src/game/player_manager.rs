@@ -32,6 +32,7 @@ impl PlayerManager {
         self.players.lock().unwrap().values().cloned().collect()
     }
 
+    #[allow(dead_code)]
     pub fn get_player(&self, player_id: &str) -> Option<Player> {
         self.players.lock().unwrap().get(player_id).cloned()
     }

@@ -79,6 +79,7 @@ impl MessageHandler {
 );
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn handle_shoot(&self, player_id: &str, start_x: f32, start_y: f32, start_z: f32, target_x: f32, target_y: f32, target_z: f32) {
         self.message_broadcaster.broadcast_message(
             &ServerMessage::PlayerShot {

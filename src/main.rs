@@ -13,10 +13,10 @@ async fn main() {
 
     let server = Arc::new(GameServer::new());
     let port = std::env::var("PORT").unwrap_or_else(|_| "6969".to_string());
-    let bind_addr = format!("0.0.0.0:{}", port);
+    let bind_addr = format!("0.0.0.0:{port}");
     let listener = TcpListener::bind(&bind_addr).await.unwrap();
     
-    log::info!("Game server listening on ws://0.0.0.0:{}", port);
+    log::info!("Game server listening on ws://0.0.0.0:{port}");
 
     while let Ok((stream, addr)) = listener.accept().await {
         let server_clone = Arc::clone(&server);
