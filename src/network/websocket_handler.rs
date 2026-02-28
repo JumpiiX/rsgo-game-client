@@ -35,7 +35,6 @@ impl WebSocketHandler {
         let welcome_json = serde_json::to_string(&welcome_msg).unwrap();
         ws_sender.send(Message::Text(welcome_json)).await?;
         
-        // Spawn task to handle outgoing messages
         tokio::spawn(async move {
             while let Some(msg) = rx.recv().await {
                 if ws_sender.send(Message::Text(msg)).await.is_err() {
@@ -66,7 +65,6 @@ impl WebSocketHandler {
             }
         }
 
-        // Cleanup on disconnect
         self.message_broadcaster.remove_connection(&self.player_id);
         self.player_manager.remove_player(&self.player_id);
         

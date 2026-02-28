@@ -42,13 +42,11 @@ impl MessageHandler {
     }
 
     fn handle_join(&self, player_id: &str, name: String) {
-        // Get spawn position based on current player count
         let player_count = self.player_manager.get_player_count();
         let spawn_pos = self.spawn_system.get_spawn_position(player_count);
 
         let player = Player::new(player_id.to_string(), name, spawn_pos);
 
-        // Send existing players to new player first
         let existing_players = self.player_manager.get_all_players();
         for existing_player in existing_players {
             let join_msg = ServerMessage::PlayerJoined { 
@@ -96,10 +94,8 @@ impl MessageHandler {
     }
 
     fn handle_hit(&self, shooter_id: &str, target_player_id: String, _killed: bool) {
-        // Apply damage to target player
         if let Some((died, health, shield)) = self.player_manager.damage_player(&target_player_id, 50) {
             if died {
-                // Give kill to shooter
                 self.player_manager.add_kill_to_player(shooter_id);
                 
                 self.message_broadcaster.broadcast_message(
@@ -110,9 +106,7 @@ impl MessageHandler {
                     None
                 );
                 
-                // Don't auto-respawn anymore, wait for player to request respawn
             } else {
-                // Player hit but not dead
                 self.message_broadcaster.broadcast_message(
                     &ServerMessage::PlayerHit { 
                         player_id: target_player_id, 

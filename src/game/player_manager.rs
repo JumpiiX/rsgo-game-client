@@ -77,7 +77,6 @@ impl PlayerManager {
         
         for player in players.values_mut() {
             if player.update_shield_regen() {
-                // Shield changed, add to updates
                 shield_updates.push((player.id.clone(), player.shield));
             }
         }

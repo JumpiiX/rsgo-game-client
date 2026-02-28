@@ -48,31 +48,27 @@ impl Player {
     }
     
     pub fn take_damage(&mut self, damage: i32) -> bool {
-        // Update last hit time for shield regeneration
         self.last_hit_time = Some(Instant::now());
         self.shield_regen_active = false;
         
         let mut remaining_damage = damage;
         
-        // Apply damage to shield first
         if self.shield > 0 {
             let shield_damage = remaining_damage.min(self.shield);
             self.shield -= shield_damage;
             remaining_damage -= shield_damage;
         }
         
-        // Apply remaining damage to health
         if remaining_damage > 0 {
             self.health -= remaining_damage;
         }
         
-        // Check if player died
         if self.health <= 0 {
             self.health = 0;
             self.alive = false;
-            true  // Player died
+            true
         } else {
-            false  // Player still alive
+            false
         }
     }
     
@@ -82,27 +78,23 @@ impl Player {
         if let Some(last_hit) = self.last_hit_time {
             let time_since_hit = last_hit.elapsed();
             
-            // Start shield regen after 5 seconds
             if time_since_hit >= Duration::from_secs(5) && self.shield < 50 && self.alive {
                 if !self.shield_regen_active {
                     self.shield_regen_active = true;
                 }
                 
                 let old_shield = self.shield;
-                // Regenerate 1 shield per 100ms (10 shield per second), cap at 50
                 self.shield = (self.shield + 1).min(50);
                 
                 if self.shield != old_shield {
                     shield_changed = true;
                 }
                 
-                // Stop at max shield
                 if self.shield >= 50 {
                     self.shield_regen_active = false;
                 }
             }
         } else if self.shield < 50 && self.alive {
-            // If never hit, regenerate shield to 50 (spawn protection)
             let old_shield = self.shield;
             self.shield = 50;
             shield_changed = old_shield != self.shield;
