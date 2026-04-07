@@ -98,13 +98,24 @@ impl MessageHandler {
             if died {
                 self.player_manager.add_kill_to_player(shooter_id);
                 
+                let victim_name = self.player_manager.get_player(&target_player_id)
+                    .map(|p| p.name)
+                    .unwrap_or_else(|| "Unknown".to_string());
+                let killer_name = self.player_manager.get_player(shooter_id)
+                    .map(|p| p.name)
+                    .unwrap_or_else(|| "Unknown".to_string());
+                
                 self.message_broadcaster.broadcast_message(
                     &ServerMessage::PlayerDied { 
                         player_id: target_player_id.clone(),
-                        killer_id: shooter_id.to_string()
+                        killer_id: shooter_id.to_string(),
+                        victim_name,
+                        killer_name
                     },
                     None
                 );
+                
+                self.broadcast_scoreboard();
                 
             } else {
                 self.message_broadcaster.broadcast_message(
@@ -132,5 +143,14 @@ impl MessageHandler {
             
             log::info!("Player {} manually respawned at ({}, {}, {})", player_id, spawn_pos.0, spawn_pos.1, spawn_pos.2);
         }
+    }
+    
+    fn broadcast_scoreboard(&self) {
+        let scoreboard_data = self.player_manager.get_scoreboard_data();
+        let scoreboard_message = ServerMessage::ScoreboardUpdate {
+            players: scoreboard_data,
+        };
+        
+        self.message_broadcaster.broadcast_message(&scoreboard_message, None);
     }
 }

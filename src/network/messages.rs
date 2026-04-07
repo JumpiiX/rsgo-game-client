@@ -32,9 +32,18 @@ pub enum ServerMessage {
     #[serde(rename = "player_hit")]
     PlayerHit { player_id: String, damage: i32, health: i32, shield: i32 },
     #[serde(rename = "player_died")]
-    PlayerDied { player_id: String, killer_id: String },
+    PlayerDied { player_id: String, killer_id: String, victim_name: String, killer_name: String },
     #[serde(rename = "player_respawned")]
     PlayerRespawned { player: Player },
     #[serde(rename = "shield_update")]
     ShieldUpdate { player_id: String, shield: i32 },
+    #[serde(rename = "scoreboard_update")]
+    ScoreboardUpdate { players: Vec<ScoreboardPlayer> },
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ScoreboardPlayer {
+    pub id: String,
+    pub name: String,
+    pub kills: i32,
 }

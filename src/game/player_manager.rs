@@ -1,4 +1,5 @@
 use crate::game::Player;
+use crate::network::messages::ScoreboardPlayer;
 use std::collections::HashMap;
 use std::sync::Mutex;
 
@@ -82,5 +83,21 @@ impl PlayerManager {
         }
         
         shield_updates
+    }
+    
+    pub fn get_scoreboard_data(&self) -> Vec<ScoreboardPlayer> {
+        let players = self.players.lock().unwrap();
+        let mut scoreboard_players: Vec<ScoreboardPlayer> = players
+            .values()
+            .map(|player| ScoreboardPlayer {
+                id: player.id.clone(),
+                name: player.name.clone(),
+                kills: player.kills,
+            })
+            .collect();
+        
+        scoreboard_players.sort_by(|a, b| b.kills.cmp(&a.kills));
+        
+        scoreboard_players
     }
 }

@@ -41,6 +41,22 @@ impl GameServer {
             }
         });
 
+        let player_manager_scoreboard = Arc::clone(&player_manager);
+        let message_broadcaster_scoreboard = Arc::clone(&message_broadcaster);
+        tokio::spawn(async move {
+            let mut interval = interval(Duration::from_secs(5));
+            loop {
+                interval.tick().await;
+                let scoreboard_data = player_manager_scoreboard.get_scoreboard_data();
+                if !scoreboard_data.is_empty() {
+                    let scoreboard_message = crate::network::messages::ServerMessage::ScoreboardUpdate {
+                        players: scoreboard_data,
+                    };
+                    message_broadcaster_scoreboard.broadcast_message(&scoreboard_message, None);
+                }
+            }
+        });
+
         Self {
             player_manager,
             message_broadcaster,
