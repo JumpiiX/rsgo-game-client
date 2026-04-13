@@ -62,6 +62,9 @@ impl MessageHandler {
             Some(player_id)
 );
 
+        // Send initial scoreboard update when player joins
+        self.broadcast_scoreboard();
+
         log::info!("Player {} joined at ({}, {}, {})", player_id, spawn_pos.0, spawn_pos.1, spawn_pos.2);
     }
 
@@ -146,11 +149,14 @@ impl MessageHandler {
     }
     
     fn broadcast_scoreboard(&self) {
+        log::info!("Broadcasting scoreboard update");
         let scoreboard_data = self.player_manager.get_scoreboard_data();
+        log::info!("Scoreboard data: {:?}", scoreboard_data);
         let scoreboard_message = ServerMessage::ScoreboardUpdate {
             players: scoreboard_data,
         };
         
         self.message_broadcaster.broadcast_message(&scoreboard_message, None);
+        log::info!("Scoreboard broadcast complete");
     }
 }
