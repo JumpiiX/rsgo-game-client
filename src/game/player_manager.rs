@@ -45,6 +45,10 @@ impl PlayerManager {
     pub fn damage_player(&self, player_id: &str, damage: i32) -> Option<(bool, i32, i32)> {
         let mut players = self.players.lock().unwrap();
         if let Some(player) = players.get_mut(player_id) {
+            // Don't allow damage to dead players
+            if !player.alive {
+                return None;
+            }
             let died = player.take_damage(damage);
             Some((died, player.health, player.shield))
         } else {

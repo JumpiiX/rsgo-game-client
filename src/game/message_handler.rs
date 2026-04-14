@@ -131,6 +131,9 @@ impl MessageHandler {
                     None
                 );
             }
+        } else {
+            // Hit was rejected (likely because player is dead or doesn't exist)
+            log::debug!("Hit rejected on player {} by {}", target_player_id, shooter_id);
         }
     }
     
