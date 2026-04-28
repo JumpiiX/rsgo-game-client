@@ -1,5 +1,5 @@
 use crate::network::{MessageBroadcaster, ClientMessage, ServerMessage};
-use crate::game::{MessageHandler, PlayerManager};
+use crate::game::MessageHandler;
 use tokio::net::TcpStream;
 use tokio_tungstenite::{accept_async, tungstenite::Message, WebSocketStream};
 use futures_util::{SinkExt, StreamExt};
@@ -10,7 +10,6 @@ pub struct WebSocketHandler {
     ws_receiver: futures_util::stream::SplitStream<WebSocketStream<TcpStream>>,
     message_broadcaster: Arc<MessageBroadcaster>,
     message_handler: Arc<MessageHandler>,
-    player_manager: Arc<PlayerManager>,
 }
 
 impl WebSocketHandler {
@@ -19,7 +18,6 @@ impl WebSocketHandler {
         player_id: String,
         message_broadcaster: Arc<MessageBroadcaster>,
         message_handler: Arc<MessageHandler>,
-        player_manager: Arc<PlayerManager>,
     ) -> Result<Self, Box<dyn std::error::Error>> {
         let ws_stream = accept_async(stream).await?;
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<String>();
@@ -28,6 +26,8 @@ impl WebSocketHandler {
 
         let welcome_msg = ServerMessage::Welcome {
             player_id: player_id.clone(),
+            lobby_id: "connecting".to_string(),
+            game_mode: "connecting".to_string(),
         };
         
         let (mut ws_sender, ws_receiver) = ws_stream.split();
@@ -48,7 +48,6 @@ impl WebSocketHandler {
             ws_receiver,
             message_broadcaster,
             message_handler,
-            player_manager,
         })
     }
 
@@ -66,12 +65,7 @@ impl WebSocketHandler {
         }
 
         self.message_broadcaster.remove_connection(&self.player_id);
-        self.player_manager.remove_player(&self.player_id);
-        
-        self.message_broadcaster.broadcast_message(
-            &ServerMessage::PlayerLeft { player_id: self.player_id.clone() },
-            None
-);
+        self.message_handler.handle_player_disconnect(&self.player_id);
 
         log::info!("Player {} disconnected", self.player_id);
     }

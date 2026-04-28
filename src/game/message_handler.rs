@@ -1,23 +1,26 @@
-use crate::network::{ClientMessage, ServerMessage, MessageBroadcaster};
-use crate::game::{Player, PlayerManager};
+use crate::network::{ClientMessage, ServerMessage, MessageBroadcaster, TeamPlayer};
+use crate::game::{Player, LobbyManager, TeamColor};
 use crate::game::spawn_system::SpawnSystem;
 use std::sync::Arc;
+use std::collections::HashMap;
 
 pub struct MessageHandler {
-    player_manager: Arc<PlayerManager>,
+    lobby_manager: Arc<LobbyManager>,
     message_broadcaster: Arc<MessageBroadcaster>,
     spawn_system: SpawnSystem,
+    player_lobbies: Arc<std::sync::Mutex<HashMap<String, String>>>,
 }
 
 impl MessageHandler {
     pub fn new(
-        player_manager: Arc<PlayerManager>,
+        lobby_manager: Arc<LobbyManager>,
         message_broadcaster: Arc<MessageBroadcaster>,
     ) -> Self {
         Self {
-            player_manager,
+            lobby_manager,
             message_broadcaster,
             spawn_system: SpawnSystem::new(),
+            player_lobbies: Arc::new(std::sync::Mutex::new(HashMap::new())),
         }
     }
 
@@ -25,6 +28,16 @@ impl MessageHandler {
         match message {
             ClientMessage::Join { name } => {
                 self.handle_join(player_id, name);
+            }
+            ClientMessage::CreateTeamLobby { name } => {
+                self.handle_create_team_lobby(player_id, name);
+            }
+            ClientMessage::JoinTeam { team } => {
+                self.handle_join_team(player_id, team);
+            }
+            ClientMessage::StartTeamGame => {
+                log::info!("Received StartTeamGame message from player {}", player_id);
+                self.handle_start_team_game(player_id);
             }
             ClientMessage::Move { x, y, z, rotation_x, rotation_y } => {
                 self.handle_move(player_id, x, y, z, rotation_x, rotation_y);
@@ -38,128 +51,474 @@ impl MessageHandler {
             ClientMessage::Respawn => {
                 self.handle_respawn(player_id);
             }
+            ClientMessage::PlantBomb => {
+                self.handle_plant_bomb(player_id);
+            }
+            ClientMessage::DefuseBomb => {
+                self.handle_defuse_bomb(player_id);
+            }
+            ClientMessage::DropBomb => {
+                self.handle_drop_bomb(player_id);
+            }
+            ClientMessage::PickupBomb => {
+                self.handle_pickup_bomb(player_id);
+            }
+            ClientMessage::PlaceStructure { structure_type, x, y, z } => {
+                self.handle_place_structure(player_id, structure_type, x, y, z);
+            }
         }
     }
 
     fn handle_join(&self, player_id: &str, name: String) {
-        let player_count = self.player_manager.get_player_count();
-        let spawn_pos = self.spawn_system.get_spawn_position(player_count);
+        let deathmatch_lobby_id = self.lobby_manager.get_deathmatch_lobby_id();
+        let spawn_pos = (0.0, 5.0, 0.0);
 
         let player = Player::new(player_id.to_string(), name, spawn_pos);
 
-        let existing_players = self.player_manager.get_all_players();
+        let existing_players = self.lobby_manager.get_lobby_players(&deathmatch_lobby_id);
+        log::info!("Deathmatch lobby {} has {} existing players", deathmatch_lobby_id, existing_players.len());
         for existing_player in existing_players {
+            log::info!("Sending existing player {} to new player {}", existing_player.id, player_id);
             let join_msg = ServerMessage::PlayerJoined { 
                 player: existing_player 
             };
             self.message_broadcaster.send_to_player(player_id, &join_msg);
         }
 
-        self.player_manager.add_player(player.clone());
+        self.lobby_manager.join_lobby(&deathmatch_lobby_id, player.clone());
+        self.player_lobbies.lock().unwrap().insert(player_id.to_string(), deathmatch_lobby_id.clone());
         
-        self.message_broadcaster.broadcast_message(
+        // Add player to lobby broadcast group
+        self.message_broadcaster.add_player_to_lobby(&deathmatch_lobby_id, player_id);
+        
+        let welcome_msg = ServerMessage::Welcome {
+            player_id: player_id.to_string(),
+            lobby_id: deathmatch_lobby_id.clone(),
+            game_mode: "deathmatch".to_string(),
+        };
+        self.message_broadcaster.send_to_player(player_id, &welcome_msg);
+
+        self.message_broadcaster.broadcast_to_lobby(
+            &deathmatch_lobby_id,
             &ServerMessage::PlayerJoined { player },
             Some(player_id)
-);
+        );
 
-        // Send initial scoreboard update when player joins
-        self.broadcast_scoreboard();
+        self.broadcast_scoreboard(&deathmatch_lobby_id);
 
-        log::info!("Player {} joined at ({}, {}, {})", player_id, spawn_pos.0, spawn_pos.1, spawn_pos.2);
+        log::info!("Player {} joined deathmatch at ({}, {}, {})", player_id, spawn_pos.0, spawn_pos.1, spawn_pos.2);
     }
 
     fn handle_move(&self, player_id: &str, x: f32, y: f32, z: f32, rotation_x: f32, rotation_y: f32) {
-        self.player_manager.update_player_position(player_id, x, y, z, rotation_x, rotation_y);
+        if let Some(lobby_id) = self.player_lobbies.lock().unwrap().get(player_id).cloned() {
+            self.lobby_manager.update_player_position(&lobby_id, player_id, x, y, z, rotation_x, rotation_y);
 
-        self.message_broadcaster.broadcast_message(
-            &ServerMessage::PlayerMoved {
-                player_id: player_id.to_string(),
-                x, y, z, rotation_x, rotation_y
-            },
-            Some(player_id)
-);
+            self.message_broadcaster.broadcast_to_lobby(
+                &lobby_id,
+                &ServerMessage::PlayerMoved {
+                    player_id: player_id.to_string(),
+                    x, y, z, rotation_x, rotation_y
+                },
+                Some(player_id)
+            );
+        }
+    }
+
+    fn handle_create_team_lobby(&self, player_id: &str, name: String) {
+        // First, remove player from their current lobby (likely deathmatch)
+        if let Some(old_lobby_id) = self.player_lobbies.lock().unwrap().get(player_id).cloned() {
+            log::info!("Removing player {} from lobby {} to join team selection", player_id, old_lobby_id);
+            self.lobby_manager.leave_lobby(&old_lobby_id, player_id);
+            self.message_broadcaster.remove_player_from_lobby(&old_lobby_id, player_id);
+            
+            // Notify others in the old lobby that this player left
+            let msg = ServerMessage::PlayerLeft { 
+                player_id: player_id.to_string() 
+            };
+            self.message_broadcaster.broadcast_to_lobby(&old_lobby_id, &msg, None);
+            self.broadcast_scoreboard(&old_lobby_id);
+        }
+        
+        // Get or join the shared team selection lobby
+        let team_lobby_id = self.lobby_manager.get_or_create_team_selection_lobby();
+        
+        // Add player to the team selection lobby - will get proper spawn when team is assigned
+        let spawn_pos = (0.0, 5.0, 0.0);  // Temporary spawn until team is chosen
+        let player = Player::new(player_id.to_string(), name, spawn_pos);
+        self.lobby_manager.join_lobby(&team_lobby_id, player);
+        
+        // Store the lobby ID for this player
+        self.player_lobbies.lock().unwrap().insert(player_id.to_string(), team_lobby_id.clone());
+        
+        // Add player to lobby broadcast group
+        self.message_broadcaster.add_player_to_lobby(&team_lobby_id, player_id);
+        
+        let msg = ServerMessage::TeamLobbyCreated { 
+            lobby_id: team_lobby_id.clone() 
+        };
+        self.message_broadcaster.send_to_player(player_id, &msg);
+        
+        // Send current team state to the new player
+        self.broadcast_team_update(&team_lobby_id);
+        
+        log::info!("Player {} joined team selection lobby {}", player_id, team_lobby_id);
+    }
+
+    fn handle_join_team(&self, player_id: &str, team: String) {
+        if let Some(lobby_id) = self.player_lobbies.lock().unwrap().get(player_id).cloned() {
+            let team_color = match team.as_str() {
+                "orange" => TeamColor::Orange,
+                "red" => TeamColor::Red,
+                _ => return,
+            };
+            
+            if self.lobby_manager.join_team(&lobby_id, player_id, team_color) {
+                self.broadcast_team_update(&lobby_id);
+                log::info!("Player {} joined {} team in lobby {}", player_id, team, lobby_id);
+            } else {
+                log::warn!("Failed to join team {} for player {} in lobby {}", team, player_id, lobby_id);
+            }
+        } else {
+            log::warn!("Player {} tried to join team but has no lobby association", player_id);
+        }
+    }
+
+    fn handle_start_team_game(&self, player_id: &str) {
+        log::info!("handle_start_team_game called for player {}", player_id);
+        if let Some(lobby_id) = self.player_lobbies.lock().unwrap().get(player_id).cloned() {
+            log::info!("Player {} found in lobby {}", player_id, lobby_id);
+            if self.lobby_manager.start_team_game(&lobby_id) {
+                // Get all players in the lobby
+                let lobby_players = self.lobby_manager.get_lobby_players(&lobby_id);
+                
+                // Send all existing players to each player (so they can see each other)
+                for player in &lobby_players {
+                    log::info!("Sending other players to {}", player.id);
+                    for other_player in &lobby_players {
+                        if player.id != other_player.id {
+                            log::info!("Sending player {} to player {}", other_player.id, player.id);
+                            let join_msg = ServerMessage::PlayerJoined { 
+                                player: other_player.clone() 
+                            };
+                            self.message_broadcaster.send_to_player(&player.id, &join_msg);
+                        }
+                    }
+                }
+                
+                let msg = ServerMessage::GameStarted { 
+                    game_mode: "team".to_string() 
+                };
+                self.message_broadcaster.broadcast_to_lobby(&lobby_id, &msg, None);
+                
+                // Send round start message
+                let attacking_team = self.lobby_manager.get_attacking_team(&lobby_id)
+                    .map(|t| match t { crate::game::TeamColor::Red => "red", crate::game::TeamColor::Orange => "orange" })
+                    .unwrap_or("red");
+                let round_msg = ServerMessage::RoundStart {
+                    round_number: 1,
+                    buy_time: 15,
+                    orange_score: 0,
+                    red_score: 0,
+                    attacking_team: attacking_team.to_string(),
+                };
+                self.message_broadcaster.broadcast_to_lobby(&lobby_id, &round_msg, None);
+                
+                // Send respawn messages for all players with their correct team spawn positions
+                for player in &lobby_players {
+                    let respawn_msg = ServerMessage::PlayerRespawned { 
+                        player: player.clone() 
+                    };
+                    self.message_broadcaster.broadcast_to_lobby(&lobby_id, &respawn_msg, None);
+                    log::info!("Sent respawn for player {} at position ({}, {}, {})", 
+                        player.id, player.x, player.y, player.z);
+                }
+                
+                // Send bomb to one player
+                if let Some(bomb_carrier_id) = self.lobby_manager.get_bomb_carrier(&lobby_id) {
+                    let bomb_msg = ServerMessage::GiveBomb {
+                        player_id: bomb_carrier_id.clone(),
+                    };
+                    self.message_broadcaster.send_to_player(&bomb_carrier_id, &bomb_msg);
+                    log::info!("Bomb given to player {}", bomb_carrier_id);
+                }
+                
+                // Update scoreboard after game starts
+                self.broadcast_scoreboard(&lobby_id);
+                
+                log::info!("Team game started in lobby {} with {} players", lobby_id, lobby_players.len());
+            }
+        }
+    }
+
+    fn broadcast_team_update(&self, lobby_id: &str) {
+        if let Some((orange_team, red_team)) = self.lobby_manager.get_team_data(lobby_id) {
+            let orange_players: Vec<TeamPlayer> = orange_team.into_iter()
+                .map(|(id, name)| TeamPlayer { id, name })
+                .collect();
+            let red_players: Vec<TeamPlayer> = red_team.into_iter()
+                .map(|(id, name)| TeamPlayer { id, name })
+                .collect();
+            
+            let can_start = orange_players.len() >= 1 && red_players.len() >= 1;
+            
+            let msg = ServerMessage::TeamUpdate {
+                orange_team: orange_players,
+                red_team: red_players,
+                can_start,
+            };
+            
+            self.message_broadcaster.broadcast_to_lobby(lobby_id, &msg, None);
+        }
     }
 
     #[allow(clippy::too_many_arguments)]
     fn handle_shoot(&self, player_id: &str, start_x: f32, start_y: f32, start_z: f32, target_x: f32, target_y: f32, target_z: f32) {
-        self.message_broadcaster.broadcast_message(
-            &ServerMessage::PlayerShot {
-                shooter_id: player_id.to_string(),
-                start_x,
-                start_y,
-                start_z,
-                target_x,
-                target_y,
-                target_z,
-            },
-            Some(player_id)
-        );
+        if let Some(lobby_id) = self.player_lobbies.lock().unwrap().get(player_id).cloned() {
+            self.message_broadcaster.broadcast_to_lobby(
+                &lobby_id,
+                &ServerMessage::PlayerShot {
+                    shooter_id: player_id.to_string(),
+                    start_x,
+                    start_y,
+                    start_z,
+                    target_x,
+                    target_y,
+                    target_z,
+                },
+                Some(player_id)
+            );
+        }
     }
 
     fn handle_hit(&self, shooter_id: &str, target_player_id: String, _killed: bool) {
-        if let Some((died, health, shield)) = self.player_manager.damage_player(&target_player_id, 50) {
-            if died {
-                self.player_manager.add_kill_to_player(shooter_id);
-                
-                let victim_name = self.player_manager.get_player(&target_player_id)
-                    .map(|p| p.name)
-                    .unwrap_or_else(|| "Unknown".to_string());
-                let killer_name = self.player_manager.get_player(shooter_id)
-                    .map(|p| p.name)
-                    .unwrap_or_else(|| "Unknown".to_string());
-                
-                self.message_broadcaster.broadcast_message(
-                    &ServerMessage::PlayerDied { 
-                        player_id: target_player_id.clone(),
-                        killer_id: shooter_id.to_string(),
-                        victim_name,
-                        killer_name
-                    },
-                    None
-                );
-                
-                self.broadcast_scoreboard();
-                
+        if let Some(lobby_id) = self.player_lobbies.lock().unwrap().get(shooter_id).cloned() {
+            if let Some((died, health, shield)) = self.lobby_manager.damage_player(&lobby_id, &target_player_id, 50) {
+                if died {
+                    self.lobby_manager.add_kill_to_player(&lobby_id, shooter_id);
+                    
+                    let lobby_players = self.lobby_manager.get_lobby_players(&lobby_id);
+                    let victim_name = lobby_players.iter().find(|p| p.id == target_player_id)
+                        .map(|p| p.name.clone())
+                        .unwrap_or_else(|| "Unknown".to_string());
+                    let killer_name = lobby_players.iter().find(|p| p.id == shooter_id)
+                        .map(|p| p.name.clone())
+                        .unwrap_or_else(|| "Unknown".to_string());
+                    
+                    self.message_broadcaster.broadcast_to_lobby(
+                        &lobby_id,
+                        &ServerMessage::PlayerDied { 
+                            player_id: target_player_id.clone(),
+                            killer_id: shooter_id.to_string(),
+                            victim_name,
+                            killer_name
+                        },
+                        None
+                    );
+                    
+                    // Check if dead player had the bomb and drop it
+                    if let Some(position) = self.lobby_manager.drop_bomb(&lobby_id, &target_player_id) {
+                        let msg = ServerMessage::BombDropped {
+                            position_x: position.0,
+                            position_y: position.1,
+                            position_z: position.2,
+                        };
+                        self.message_broadcaster.broadcast_to_lobby(&lobby_id, &msg, None);
+                        log::info!("Dead player {} dropped bomb at ({}, {}, {})", target_player_id, position.0, position.1, position.2);
+                    }
+                    
+                    self.broadcast_scoreboard(&lobby_id);
+                    
+                    // Check for team elimination after death (only in team mode)
+                    if let Some(winning_team) = self.lobby_manager.check_team_elimination(&lobby_id) {
+                        self.handle_round_end(&lobby_id, winning_team, "Team Eliminated");
+                    }
+                    
+                } else {
+                    self.message_broadcaster.broadcast_to_lobby(
+                        &lobby_id,
+                        &ServerMessage::PlayerHit { 
+                            player_id: target_player_id, 
+                            damage: 50, 
+                            health,
+                            shield
+                        },
+                        None
+                    );
+                }
             } else {
-                self.message_broadcaster.broadcast_message(
-                    &ServerMessage::PlayerHit { 
-                        player_id: target_player_id, 
-                        damage: 50, 
-                        health,
-                        shield
-                    },
-                    None
-                );
+                log::debug!("Hit rejected on player {} by {}", target_player_id, shooter_id);
             }
-        } else {
-            // Hit was rejected (likely because player is dead or doesn't exist)
-            log::debug!("Hit rejected on player {} by {}", target_player_id, shooter_id);
         }
     }
     
     fn handle_respawn(&self, player_id: &str) {
-        let player_count = self.player_manager.get_player_count();
-        let spawn_pos = self.spawn_system.get_spawn_position(player_count);
-        
-        if let Some(player) = self.player_manager.respawn_player(player_id, spawn_pos) {
-            self.message_broadcaster.broadcast_message(
-                &ServerMessage::PlayerRespawned { player },
-                None
-            );
+        if let Some(lobby_id) = self.player_lobbies.lock().unwrap().get(player_id).cloned() {
+            // Check if respawn is allowed (only in deathmatch or between rounds)
+            if !self.lobby_manager.can_respawn(&lobby_id) {
+                log::info!("Player {} tried to respawn but it's not allowed during round", player_id);
+                return;
+            }
             
-            log::info!("Player {} manually respawned at ({}, {}, {})", player_id, spawn_pos.0, spawn_pos.1, spawn_pos.2);
+            if let Some(player) = self.lobby_manager.respawn_player(&lobby_id, player_id) {
+                self.message_broadcaster.broadcast_to_lobby(
+                    &lobby_id,
+                    &ServerMessage::PlayerRespawned { player: player.clone() },
+                    None
+                );
+                
+                log::info!("Player {} respawned at ({}, {}, {})", player_id, player.x, player.y, player.z);
+            }
         }
     }
     
-    fn broadcast_scoreboard(&self) {
-        log::info!("Broadcasting scoreboard update");
-        let scoreboard_data = self.player_manager.get_scoreboard_data();
+    fn broadcast_scoreboard(&self, lobby_id: &str) {
+        log::info!("Broadcasting scoreboard update for lobby {}", lobby_id);
+        let scoreboard_data = self.lobby_manager.get_lobby_scoreboard(lobby_id);
         log::info!("Scoreboard data: {:?}", scoreboard_data);
         let scoreboard_message = ServerMessage::ScoreboardUpdate {
             players: scoreboard_data,
         };
         
-        self.message_broadcaster.broadcast_message(&scoreboard_message, None);
-        log::info!("Scoreboard broadcast complete");
+        self.message_broadcaster.broadcast_to_lobby(lobby_id, &scoreboard_message, None);
+        log::info!("Scoreboard broadcast complete for lobby {}", lobby_id);
+    }
+
+    pub fn handle_player_disconnect(&self, player_id: &str) {
+        if let Some(lobby_id) = self.player_lobbies.lock().unwrap().remove(player_id) {
+            // Remove player from broadcast group
+            self.message_broadcaster.remove_player_from_lobby(&lobby_id, player_id);
+            
+            self.lobby_manager.leave_lobby(&lobby_id, player_id);
+            
+            let msg = ServerMessage::PlayerLeft { 
+                player_id: player_id.to_string() 
+            };
+            self.message_broadcaster.broadcast_to_lobby(&lobby_id, &msg, None);
+            
+            self.broadcast_team_update(&lobby_id);
+            self.broadcast_scoreboard(&lobby_id);
+            
+            log::info!("Player {} disconnected from lobby {}", player_id, lobby_id);
+        }
+    }
+    
+    fn handle_plant_bomb(&self, player_id: &str) {
+        if let Some(lobby_id) = self.player_lobbies.lock().unwrap().get(player_id).cloned() {
+            if self.lobby_manager.plant_bomb(&lobby_id, player_id) {
+                let msg = ServerMessage::BombPlanted { 
+                    player_id: player_id.to_string(),
+                    timer: 45, // CS:GO bomb timer
+                };
+                self.message_broadcaster.broadcast_to_lobby(&lobby_id, &msg, None);
+                log::info!("Player {} planted the bomb", player_id);
+            }
+        }
+    }
+    
+    fn handle_defuse_bomb(&self, _player_id: &str) {
+        // Not implemented yet - would need defuse logic
+    }
+    
+    fn handle_place_structure(&self, player_id: &str, structure_type: String, x: f32, y: f32, z: f32) {
+        // Handle structure placement during build phase
+        if let Some(_lobby_id) = self.player_lobbies.lock().unwrap().get(player_id).cloned() {
+            // Check if we're in build phase
+            // For now, just log it - actual building logic would go here
+            log::info!("Player {} placed {} at ({}, {}, {})", player_id, structure_type, x, y, z);
+            
+            // Broadcast structure placement to all players
+            // This would need a new message type for structure placement
+        }
+    }
+    
+    fn handle_round_end(&self, lobby_id: &str, winning_team: crate::game::TeamColor, reason: &str) {
+        // End the round
+        self.lobby_manager.end_round(lobby_id, winning_team.clone(), reason);
+        
+        // Get scores
+        let (orange_score, red_score) = self.lobby_manager.get_team_scores(lobby_id);
+        
+        // Send round end message
+        let winner_str = match winning_team {
+            crate::game::TeamColor::Orange => "orange",
+            crate::game::TeamColor::Red => "red",
+        };
+        
+        let msg = ServerMessage::RoundEnd {
+            winner: winner_str.to_string(),
+            reason: reason.to_string(),
+            orange_score,
+            red_score,
+        };
+        self.message_broadcaster.broadcast_to_lobby(lobby_id, &msg, None);
+        
+        // Start next round after delay (3 seconds)
+        let lobby_id = lobby_id.to_string();
+        let broadcaster = self.message_broadcaster.clone();
+        let lobby_manager = self.lobby_manager.clone();
+        
+        std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_secs(3));
+            
+            // Start next round
+            lobby_manager.start_new_round(&lobby_id);
+            let (orange_score, red_score) = lobby_manager.get_team_scores(&lobby_id);
+            
+            let attacking_team = lobby_manager.get_attacking_team(&lobby_id)
+                .map(|t| match t { crate::game::TeamColor::Red => "red", crate::game::TeamColor::Orange => "orange" })
+                .unwrap_or("red");
+            let round_msg = ServerMessage::RoundStart {
+                round_number: lobby_manager.get_round_number(&lobby_id),
+                buy_time: 15,
+                orange_score,
+                red_score,
+                attacking_team: attacking_team.to_string(),
+            };
+            broadcaster.broadcast_to_lobby(&lobby_id, &round_msg, None);
+            
+            // Send all players their respawn messages with correct positions
+            let players = lobby_manager.get_lobby_players(&lobby_id);
+            for player in players {
+                let respawn_msg = ServerMessage::PlayerRespawned { 
+                    player: player.clone() 
+                };
+                broadcaster.broadcast_to_lobby(&lobby_id, &respawn_msg, None);
+            }
+            
+            // Give bomb to attacker
+            if let Some(bomb_carrier_id) = lobby_manager.get_bomb_carrier(&lobby_id) {
+                let bomb_msg = ServerMessage::GiveBomb {
+                    player_id: bomb_carrier_id.clone(),
+                };
+                broadcaster.send_to_player(&bomb_carrier_id, &bomb_msg);
+            }
+        });
+    }
+    
+    fn handle_drop_bomb(&self, player_id: &str) {
+        if let Some(lobby_id) = self.player_lobbies.lock().unwrap().get(player_id).cloned() {
+            if let Some(position) = self.lobby_manager.drop_bomb(&lobby_id, player_id) {
+                let msg = ServerMessage::BombDropped {
+                    position_x: position.0,
+                    position_y: position.1,
+                    position_z: position.2,
+                };
+                self.message_broadcaster.broadcast_to_lobby(&lobby_id, &msg, None);
+                log::info!("Player {} dropped bomb at ({}, {}, {})", player_id, position.0, position.1, position.2);
+            }
+        }
+    }
+    
+    fn handle_pickup_bomb(&self, player_id: &str) {
+        if let Some(lobby_id) = self.player_lobbies.lock().unwrap().get(player_id).cloned() {
+            if let Some(player_name) = self.lobby_manager.pickup_bomb(&lobby_id, player_id) {
+                let msg = ServerMessage::BombPickedUp {
+                    player_id: player_id.to_string(),
+                    player_name,
+                };
+                self.message_broadcaster.broadcast_to_lobby(&lobby_id, &msg, None);
+                log::info!("Player {} picked up bomb", player_id);
+            }
+        }
     }
 }
