@@ -21,7 +21,7 @@ jobs:
           set -e
           cd /root
           rm -rf rsgo-backend
-          git clone https://github.com/JumpiiX/rsgo-backend.git
+          git clone https://github.com/JumpiiX/rsgo-game-client.git rsgo-backend
           cd rsgo-backend
           docker stop rsgo-backend || true
           docker rm rsgo-backend || true
