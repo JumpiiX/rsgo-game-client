@@ -14,6 +14,10 @@ pub struct Player {
     pub shield: i32,
     pub alive: bool,
     pub kills: i32,
+    pub deaths: i32,
+    pub money: i32,
+    pub has_bomb: bool,
+    pub team: Option<String>,
     #[serde(skip)]
     pub last_hit_time: Option<Instant>,
     #[serde(skip)]
@@ -34,6 +38,10 @@ impl Player {
             shield: 100,
             alive: true,
             kills: 0,
+            deaths: 0,
+            money: 800, // Starting money in CS:GO
+            has_bomb: false,
+            team: None,
             last_hit_time: None,
             shield_regen_active: false,
         }
@@ -105,6 +113,8 @@ impl Player {
     
     pub fn add_kill(&mut self) {
         self.kills += 1;
+        self.money += 300; // Kill reward
+        self.money = self.money.min(16000); // Max money cap
     }
     
     pub fn respawn(&mut self, spawn_pos: (f32, f32, f32)) {
