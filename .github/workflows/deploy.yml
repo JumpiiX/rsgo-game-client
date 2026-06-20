@@ -18,13 +18,21 @@ jobs:
         username: ${{ secrets.SSH_USER }}
         key: ${{ secrets.SSH_KEY }}
         script: |
+          set -e
           cd /root
           rm -rf rsgo-backend
           git clone https://github.com/JumpiiX/rsgo-backend.git
           cd rsgo-backend
           docker stop rsgo-backend || true
           docker rm rsgo-backend || true
+          # Shared network so Caddy can reach the backend by name (rsgo-backend:6969).
           docker network create rsgo-shared-network 2>/dev/null || true
           docker-compose down || true
           docker-compose build --no-cache
-          docker run -d --name rsgo-backend --network rsgo-shared-network -p 6969:6969 --restart unless-stopped rsgo-backend-backend:latest
+          # NO public -p port: Caddy proxies /ws -> rsgo-backend:6969 internally.
+          # -e RUST_LOG=info so lobby/join logs appear in `docker logs rsgo-backend`.
+          docker run -d --name rsgo-backend \
+            --network rsgo-shared-network \
+            --restart unless-stopped \
+            -e RUST_LOG=info \
+            rsgo-backend-backend:latest
