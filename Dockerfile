@@ -15,4 +15,7 @@ COPY --from=builder /app/target/release/rsgo-backend ./
 
 EXPOSE 6969
 ENV PORT=6969
+# env_logger shows nothing below `error` unless RUST_LOG is set. Default to info
+# so the lobby/join/team logs (log::info!) are visible in `docker logs`.
+ENV RUST_LOG=info
 CMD ["./rsgo-backend"]

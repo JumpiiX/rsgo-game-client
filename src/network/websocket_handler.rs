@@ -52,10 +52,13 @@ impl WebSocketHandler {
     }
 
     pub async fn handle(mut self) {
+        log::info!("Read loop STARTED for player {}", self.player_id);
         while let Some(msg) = self.ws_receiver.next().await {
             match msg {
                 Ok(Message::Text(text)) => {
-                    log::debug!("Raw message from {}: {}", self.player_id, text);
+                    // Temporarily at info so we can confirm on prod that client
+                    // frames (create_team_lobby / join_team) actually arrive.
+                    log::info!("Raw message from {}: {}", self.player_id, text);
                     match serde_json::from_str::<ClientMessage>(&text) {
                         Ok(client_msg) => {
                             self.message_handler.handle_message(&self.player_id, client_msg);
