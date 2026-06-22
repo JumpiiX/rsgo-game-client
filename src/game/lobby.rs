@@ -60,6 +60,7 @@ pub struct Lobby {
     pub round_end_time: Option<Instant>,
     pub attacking_team: TeamColor, // Which team is attacking this half
     pub spawn_system: SpawnSystem, // Spawn system for team-based spawning
+    pub structures: Vec<crate::game::collision::Wall>, // player-placed walls (for shot occlusion)
 }
 
 impl Lobby {
@@ -87,6 +88,7 @@ impl Lobby {
             round_end_time: None,
             attacking_team: TeamColor::Red,  // Red team attacks first
             spawn_system: SpawnSystem::new(),
+            structures: Vec::new(),
         }
     }
 
@@ -114,6 +116,7 @@ impl Lobby {
             round_end_time: None,
             attacking_team: TeamColor::Red,  // Red team attacks first
             spawn_system: SpawnSystem::new(),
+            structures: Vec::new(),
         }
     }
 

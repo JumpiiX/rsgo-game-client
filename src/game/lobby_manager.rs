@@ -85,6 +85,88 @@ impl LobbyManager {
         }
     }
 
+    /// Record a player-placed wall in the lobby (for server-side shot occlusion).
+    /// `rot` is the wall's Y rotation; `structure_type` sets height + destructible.
+    pub fn add_structure(&self, lobby_id: &str, structure_type: &str, x: f32, z: f32, rot: f32) {
+        use crate::game::collision::Wall;
+        // Mirror the frontend wall dimensions: length 20, thickness 2, height by
+        // type (barrier = 10, large/destructible = 20). At rot 0 the long axis is
+        // X (width 20), so hw=10 (length/2), hd=1 (thickness/2).
+        let (height, destructible) = match structure_type {
+            "large" => (20.0, false),
+            "destructible" => (20.0, true),
+            _ => (10.0, false), // barrier / small
+        };
+        let wall = Wall {
+            cx: x,
+            cz: z,
+            hw: 10.0, // length 20 / 2
+            hd: 1.0,  // thickness 2 / 2
+            rot,
+            y_min: 0.0,
+            y_max: height,
+            destructible,
+            holes: Vec::new(),
+        };
+        let mut lobbies = self.lobbies.lock().unwrap();
+        if let Some(lobby) = lobbies.get_mut(lobby_id) {
+            lobby.structures.push(wall);
+        }
+    }
+
+    /// Record a bullet hole on the destructible wall nearest to (wall_x, wall_z).
+    /// Returns true if a hole was added (matched a destructible wall under the max
+    /// of 2 holes), false otherwise. `world_y` is absolute height (matches the
+    /// occlusion test's `ly`); `local_x` is along the wall's width.
+    pub fn add_wall_hole(&self, lobby_id: &str, wall_x: f32, wall_z: f32, local_x: f32, world_y: f32, radius: f32) -> bool {
+        use crate::game::collision::Hole;
+        const MAX_HOLES: usize = 2;
+        const MATCH_DIST2: f32 = 4.0; // walls are 20-grid snapped; 2 units tolerance is plenty
+        let mut lobbies = self.lobbies.lock().unwrap();
+        let lobby = match lobbies.get_mut(lobby_id) { Some(l) => l, None => return false };
+        // Find the closest destructible wall to the reported center.
+        let mut best: Option<(usize, f32)> = None;
+        for (i, w) in lobby.structures.iter().enumerate() {
+            if !w.destructible { continue; }
+            let d2 = (w.cx - wall_x).powi(2) + (w.cz - wall_z).powi(2);
+            if d2 <= MATCH_DIST2 && best.map_or(true, |(_, bd)| d2 < bd) {
+                best = Some((i, d2));
+            }
+        }
+        if let Some((i, _)) = best {
+            let w = &mut lobby.structures[i];
+            if w.holes.len() >= MAX_HOLES { return false; }
+            w.holes.push(Hole { lx: local_x, ly: world_y, radius });
+            return true;
+        }
+        false
+    }
+
+    /// Clear all player-placed walls (e.g. halftime / map reset).
+    pub fn clear_structures(&self, lobby_id: &str) {
+        let mut lobbies = self.lobbies.lock().unwrap();
+        if let Some(lobby) = lobbies.get_mut(lobby_id) {
+            lobby.structures.clear();
+        }
+    }
+
+    /// Is the shot from `shooter_id` to `target_id` blocked by a wall? Uses the
+    /// players' current server positions (+ eye height) and all walls (map +
+    /// placed). Returns false if either player is missing (don't over-reject).
+    pub fn shot_is_blocked(&self, lobby_id: &str, shooter_id: &str, target_id: &str) -> bool {
+        use crate::game::collision::shot_blocked;
+        const EYE: f32 = 8.0; // approx eye height above the player's stored y (feet)
+        let lobbies = self.lobbies.lock().unwrap();
+        if let Some(lobby) = lobbies.get(lobby_id) {
+            let s = match lobby.players.get(shooter_id) { Some(p) => p, None => return false };
+            let t = match lobby.players.get(target_id) { Some(p) => p, None => return false };
+            let shooter = (s.x, s.y + EYE, s.z);
+            let target = (t.x, t.y + EYE, t.z);
+            return shot_blocked(shooter, target, &lobby.structures);
+        }
+        false
+    }
+
     pub fn leave_lobby(&self, lobby_id: &str, player_id: &str) {
         let mut lobbies = self.lobbies.lock().unwrap();
         if let Some(lobby) = lobbies.get_mut(lobby_id) {
@@ -362,8 +444,10 @@ impl LobbyManager {
             if let Some(lobby) = lobbies.get_mut(&lobby_id) {
                 let (restarted, sides_switched) = lobby.check_round_restart();
                 if restarted {
-                    // Halftime: clear all structures built in the first half.
+                    // Halftime: clear all structures built in the first half
+                    // (client meshes via MapReset + server occlusion walls).
                     if sides_switched {
+                        lobby.structures.clear();
                         let reset_msg = crate::network::messages::ServerMessage::MapReset;
                         broadcaster.broadcast_to_lobby(&lobby_id, &reset_msg, None);
                         log::info!("Halftime map reset broadcast for lobby {}", lobby_id);

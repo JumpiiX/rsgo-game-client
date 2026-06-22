@@ -68,6 +68,9 @@ impl MessageHandler {
             ClientMessage::PlaceStructure { structure_type, x, y, z } => {
                 self.handle_place_structure(player_id, structure_type, x, y, z);
             }
+            ClientMessage::WallHit { wall_x, wall_z, local_x, world_y, radius } => {
+                self.handle_wall_hit(player_id, wall_x, wall_z, local_x, world_y, radius);
+            }
         }
     }
 
@@ -294,6 +297,13 @@ impl MessageHandler {
 
     fn handle_hit(&self, shooter_id: &str, target_player_id: String, _killed: bool) {
         if let Some(lobby_id) = self.player_lobbies.lock().unwrap().get(shooter_id).cloned() {
+            // SERVER-SIDE WALL OCCLUSION: reject the hit if a wall (map or placed)
+            // blocks the line from shooter to target. This stops shooting through
+            // walls; we trust the client's target claim but verify line-of-sight.
+            if self.lobby_manager.shot_is_blocked(&lobby_id, shooter_id, &target_player_id) {
+                log::info!("Hit rejected: wall between {} and {}", shooter_id, target_player_id);
+                return;
+            }
             if let Some((died, health, shield)) = self.lobby_manager.damage_player(&lobby_id, &target_player_id, 50) {
                 if died {
                     self.lobby_manager.add_kill_to_player(&lobby_id, shooter_id);
@@ -492,6 +502,10 @@ impl MessageHandler {
                 }
             }
             
+            // Record the wall server-side for shot occlusion (the `y` field is
+            // actually the wall's Y rotation, not a height).
+            self.lobby_manager.add_structure(&lobby_id, &structure_type, x, z, y);
+
             // Broadcast structure placement to all players in the lobby
             let msg = ServerMessage::StructurePlaced {
                 player_id: player_id.to_string(),
@@ -500,12 +514,29 @@ impl MessageHandler {
                 y,  // This is actually the rotation value
                 z,
             };
-            
+
             // Send to all players except the one who placed it
             self.message_broadcaster.broadcast_to_lobby(&lobby_id, &msg, Some(player_id));
         }
     }
-    
+
+    // A client reports a bullet hole on a destructible wall. We record it on the
+    // matching server wall (so shots can pass through it) and broadcast it to ALL
+    // clients (including the shooter) so every client renders the same holes.
+    fn handle_wall_hit(&self, player_id: &str, wall_x: f32, wall_z: f32, local_x: f32, world_y: f32, radius: f32) {
+        if let Some(lobby_id) = self.player_lobbies.lock().unwrap().get(player_id).cloned() {
+            // Record on the nearest matching destructible wall; returns false if
+            // no wall matched or it already has the max holes.
+            if self.lobby_manager.add_wall_hole(&lobby_id, wall_x, wall_z, local_x, world_y, radius) {
+                self.message_broadcaster.broadcast_to_lobby(
+                    &lobby_id,
+                    &ServerMessage::WallHole { wall_x, wall_z, local_x, world_y, radius },
+                    None, // send to everyone — even the shooter renders from the authoritative msg
+                );
+            }
+        }
+    }
+
     fn handle_round_end(&self, lobby_id: &str, winning_team: crate::game::TeamColor, reason: &str) {
         self.finish_round(lobby_id, winning_team, reason, false);
     }
@@ -560,8 +591,10 @@ impl MessageHandler {
             // Start next round
             let sides_switched = lobby_manager.start_new_round(&lobby_id);
 
-            // Halftime: clear all structures built in the first half.
+            // Halftime: clear all structures built in the first half (both the
+            // client meshes via MapReset AND our server-side occlusion walls).
             if sides_switched {
+                lobby_manager.clear_structures(&lobby_id);
                 broadcaster.broadcast_to_lobby(&lobby_id, &ServerMessage::MapReset, None);
                 log::info!("Halftime map reset broadcast for lobby {}", lobby_id);
             }

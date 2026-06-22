@@ -33,6 +33,11 @@ pub enum ClientMessage {
     PickupBomb,
     #[serde(rename = "place_structure")]
     PlaceStructure { structure_type: String, x: f32, y: f32, z: f32 },
+    // A bullet punched a hole in a destructible wall. wall_x/wall_z identify the
+    // wall (its center); local_x is along the wall's width, world_y is the hit's
+    // absolute height. The server records it + broadcasts so all clients agree.
+    #[serde(rename = "wall_hit")]
+    WallHit { wall_x: f32, wall_z: f32, local_x: f32, world_y: f32, radius: f32 },
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -129,6 +134,10 @@ pub enum ServerMessage {
     },
     #[serde(rename = "map_reset")]
     MapReset,
+    // Authoritative bullet hole on a destructible wall — broadcast to every
+    // client so they all render the same holes (and shots pass through them).
+    #[serde(rename = "wall_hole")]
+    WallHole { wall_x: f32, wall_z: f32, local_x: f32, world_y: f32, radius: f32 },
 }
 
 #[derive(Debug, Serialize, Deserialize)]

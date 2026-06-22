@@ -4,6 +4,7 @@ pub mod message_handler;
 pub mod spawn_system;
 pub mod lobby;
 pub mod lobby_manager;
+pub mod collision;
 
 pub use player::Player;
 pub use message_handler::MessageHandler;
