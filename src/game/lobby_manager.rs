@@ -387,7 +387,9 @@ impl LobbyManager {
             if let Some(lobby) = lobbies.get_mut(&lobby_id) {
                 if lobby.check_build_phase_timeout() {
                     // Build phase ended, notify all players in lobby
-                    let msg = crate::network::messages::ServerMessage::BuildPhaseEnd;
+                    let msg = crate::network::messages::ServerMessage::BuildPhaseEnd {
+                        round_time: crate::game::lobby::ROUND_TIMER_SECS,
+                    };
                     broadcaster.broadcast_to_lobby(&lobby_id, &msg, None);
                     log::info!("Build phase ended for lobby {}", lobby_id);
                 }
@@ -436,10 +438,47 @@ impl LobbyManager {
         }
     }
     
+    /// Ends any round where the attackers ran out of time without planting (the
+    /// defenders win). Mirrors check_all_bomb_explosions' broadcast shape: RoundEnd
+    /// + money updates. The actual round restart is handled by check_all_round_restarts.
+    pub fn check_all_round_timeouts(&self, broadcaster: &crate::network::MessageBroadcaster) {
+        let mut lobbies = self.lobbies.lock().unwrap();
+        let lobby_ids: Vec<String> = lobbies.keys().cloned().collect();
+
+        for lobby_id in lobby_ids {
+            if let Some(lobby) = lobbies.get_mut(&lobby_id) {
+                if let Some(winner_team) = lobby.check_round_timeout() {
+                    let (orange_score, red_score) = (lobby.orange_score, lobby.red_score);
+                    let winner = match winner_team {
+                        crate::game::TeamColor::Orange => "orange",
+                        crate::game::TeamColor::Red => "red",
+                    };
+                    let msg = crate::network::messages::ServerMessage::RoundEnd {
+                        winner: winner.to_string(),
+                        reason: "Time Up".to_string(),
+                        orange_score,
+                        red_score,
+                    };
+                    broadcaster.broadcast_to_lobby(&lobby_id, &msg, None);
+                    log::info!("Round timed out in lobby {}, {} (defenders) win", lobby_id, winner);
+
+                    // Send money updates to all players after round end.
+                    for player in lobby.players.values() {
+                        let money_msg = crate::network::messages::ServerMessage::MoneyUpdate {
+                            player_id: player.id.clone(),
+                            money: player.money,
+                        };
+                        broadcaster.send_to_player(&player.id, &money_msg);
+                    }
+                }
+            }
+        }
+    }
+
     pub fn check_all_round_restarts(&self, broadcaster: &crate::network::MessageBroadcaster) {
         let mut lobbies = self.lobbies.lock().unwrap();
         let lobby_ids: Vec<String> = lobbies.keys().cloned().collect();
-        
+
         for lobby_id in lobby_ids {
             if let Some(lobby) = lobbies.get_mut(&lobby_id) {
                 let (restarted, sides_switched) = lobby.check_round_restart();

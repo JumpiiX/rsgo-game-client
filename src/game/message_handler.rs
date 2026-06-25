@@ -25,7 +25,11 @@ impl MessageHandler {
     }
 
     pub fn handle_message(&self, player_id: &str, message: ClientMessage) {
-        log::error!(">>> Received message from {}: {:?}", player_id, message);
+        // Per-message trace, skipping the high-frequency Move stream so it isn't
+        // spammed. (Was error! on every message, including Move — pure noise.)
+        if !matches!(message, ClientMessage::Move { .. }) {
+            log::debug!(">>> Received message from {}: {:?}", player_id, message);
+        }
         match message {
             ClientMessage::Join { name } => {
                 self.handle_join(player_id, name);

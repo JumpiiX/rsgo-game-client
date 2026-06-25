@@ -91,7 +91,7 @@ pub enum ServerMessage {
         red_score: i32,
     },
     #[serde(rename = "build_phase_end")]
-    BuildPhaseEnd,
+    BuildPhaseEnd { round_time: u64 },
     #[serde(rename = "bomb_planted")]
     BombPlanted { 
         player_id: String,

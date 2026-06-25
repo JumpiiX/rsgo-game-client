@@ -32,6 +32,8 @@ impl GameServer {
                 interval.tick().await;
                 // Check all lobbies for build phase timeout
                 lobby_manager_clone.check_all_build_phase_timeouts(&message_broadcaster_clone);
+                // Check all lobbies for round timeouts (attackers failed to plant in time)
+                lobby_manager_clone.check_all_round_timeouts(&message_broadcaster_clone);
                 // Check all lobbies for bomb explosions
                 lobby_manager_clone.check_all_bomb_explosions(&message_broadcaster_clone);
                 // Check all lobbies for round restarts

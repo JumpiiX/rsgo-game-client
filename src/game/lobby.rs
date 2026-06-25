@@ -7,6 +7,11 @@ use std::time::{Duration, Instant};
 /// Seconds from plant until the bomb explodes.
 pub const BOMB_TIMER_SECS: u64 = 40;
 
+/// Seconds the attackers have during the Playing phase to plant the bomb. If the
+/// round timer runs out BEFORE a plant, the defenders win (TimeUp). Once the bomb
+/// is planted, this timer no longer matters — only BOMB_TIMER_SECS does.
+pub const ROUND_TIMER_SECS: u64 = 100;
+
 #[derive(Debug, Clone)]
 pub enum GameMode {
     Deathmatch,
@@ -352,6 +357,28 @@ impl Lobby {
         }
     }
     
+    /// If the Playing phase has run past ROUND_TIMER_SECS and the bomb is NOT
+    /// planted, time is up: the defenders win. Returns the winning (defending)
+    /// team if the round just ended this way, else None. A planted bomb freezes
+    /// this timer — the bomb explosion check takes over from there.
+    pub fn check_round_timeout(&mut self) -> Option<TeamColor> {
+        if self.bomb_planted {
+            return None; // bomb is ticking — round timer no longer applies
+        }
+        if let (GameState::Playing, Some(start_time)) = (&self.game_state, self.round_start_time) {
+            if start_time.elapsed() >= Duration::from_secs(ROUND_TIMER_SECS) {
+                let defending_team = match self.attacking_team {
+                    TeamColor::Orange => TeamColor::Red,
+                    TeamColor::Red => TeamColor::Orange,
+                };
+                log::info!("⏱️ Round time up! {:?} (defenders) win — attackers failed to plant", defending_team);
+                self.end_round(defending_team.clone(), RoundEndReason::TimeUp);
+                return Some(defending_team);
+            }
+        }
+        None
+    }
+
     pub fn check_bomb_explosion(&mut self) -> bool {
         if let (true, Some(plant_time)) = (self.bomb_planted, self.bomb_plant_time) {
             let elapsed = plant_time.elapsed().as_secs();
