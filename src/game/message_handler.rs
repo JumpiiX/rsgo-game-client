@@ -581,17 +581,48 @@ impl MessageHandler {
             self.message_broadcaster.send_to_player(&player.id, &money_msg);
             log::info!("Sent money update after round end to player {}: ${}", player.id, player.money);
         }
-        
-        // Start next round after delay (3 seconds)
+
+        // MATCH OVER? Decide SYNCHRONOUSLY (before scheduling any restart) whether
+        // this round win pushed a team to 7. If so, announce MatchEnd now and do
+        // NOT spawn the next-round thread — otherwise round 8 would start. We check
+        // is_match_over (read-only) here and consume the announce flag so it's sent
+        // exactly once (the 1s tick path also calls take_match_end_winner, but the
+        // flag guarantees a single broadcast).
+        if self.lobby_manager.is_match_over(lobby_id) {
+            if let Some(winner) = self.lobby_manager.take_match_end_winner(lobby_id) {
+                self.message_broadcaster.broadcast_to_lobby(
+                    lobby_id,
+                    &ServerMessage::MatchEnd { winner: winner.to_string() },
+                    None,
+                );
+                log::info!("🏆 MATCH ENDED in lobby {}: {} wins", lobby_id, winner);
+            }
+            return; // no next round
+        }
+
+        // Start next round after delay (5 seconds)
         let lobby_id = lobby_id.to_string();
         let broadcaster = self.message_broadcaster.clone();
         let lobby_manager = self.lobby_manager.clone();
-        
+
         std::thread::spawn(move || {
             // Post-round window: players stay alive and can keep fighting for a
             // few seconds before the next round resets everything.
             std::thread::sleep(std::time::Duration::from_secs(5));
-            
+
+            // Safety: if the match somehow ended during the window, don't restart.
+            if lobby_manager.is_match_over(&lobby_id) {
+                if let Some(winner) = lobby_manager.take_match_end_winner(&lobby_id) {
+                    broadcaster.broadcast_to_lobby(
+                        &lobby_id,
+                        &ServerMessage::MatchEnd { winner: winner.to_string() },
+                        None,
+                    );
+                    log::info!("🏆 MATCH ENDED in lobby {}: {} wins", lobby_id, winner);
+                }
+                return;
+            }
+
             // Start next round
             let sides_switched = lobby_manager.start_new_round(&lobby_id);
 

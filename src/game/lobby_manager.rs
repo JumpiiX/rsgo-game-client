@@ -358,6 +358,23 @@ impl LobbyManager {
             (0, 0)
         }
     }
+
+    /// If the match just ended (a team hit 7 wins), return the winner once
+    /// ("orange"/"red") and mark it announced. Used by the round-restart paths to
+    /// announce the match instead of starting another round.
+    pub fn take_match_end_winner(&self, lobby_id: &str) -> Option<&'static str> {
+        let mut lobbies = self.lobbies.lock().unwrap();
+        lobbies.get_mut(lobby_id).and_then(|l| l.take_match_end_winner())
+    }
+
+    /// Read-only: is this lobby in the MatchEnd state? (Does NOT consume the
+    /// announce flag — used to decide whether to schedule another round.)
+    pub fn is_match_over(&self, lobby_id: &str) -> bool {
+        let lobbies = self.lobbies.lock().unwrap();
+        lobbies.get(lobby_id)
+            .map(|l| matches!(l.game_state, crate::game::lobby::GameState::MatchEnd))
+            .unwrap_or(false)
+    }
     
     // Returns true if the sides were switched (halftime), so the caller can
     // broadcast a map reset.
@@ -470,6 +487,26 @@ impl LobbyManager {
                         };
                         broadcaster.send_to_player(&player.id, &money_msg);
                     }
+                }
+            }
+        }
+    }
+
+    /// Broadcast a MatchEnd message once when a team reaches 7 round wins. The
+    /// client shows the winner animation and returns players to the landing page.
+    pub fn check_all_match_ends(&self, broadcaster: &crate::network::MessageBroadcaster) {
+        let mut lobbies = self.lobbies.lock().unwrap();
+        let lobby_ids: Vec<String> = lobbies.keys().cloned().collect();
+
+        for lobby_id in lobby_ids {
+            if let Some(lobby) = lobbies.get_mut(&lobby_id) {
+                if let Some(winner) = lobby.take_match_end_winner() {
+                    let msg = crate::network::messages::ServerMessage::MatchEnd {
+                        winner: winner.to_string(),
+                    };
+                    broadcaster.broadcast_to_lobby(&lobby_id, &msg, None);
+                    log::info!("🏆 MATCH ENDED in lobby {}: {} wins ({}-{})",
+                        lobby_id, winner, lobby.orange_score, lobby.red_score);
                 }
             }
         }

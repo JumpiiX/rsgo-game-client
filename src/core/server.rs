@@ -36,6 +36,8 @@ impl GameServer {
                 lobby_manager_clone.check_all_round_timeouts(&message_broadcaster_clone);
                 // Check all lobbies for bomb explosions
                 lobby_manager_clone.check_all_bomb_explosions(&message_broadcaster_clone);
+                // Announce match end (a team reached 7 wins) before any restart.
+                lobby_manager_clone.check_all_match_ends(&message_broadcaster_clone);
                 // Check all lobbies for round restarts
                 lobby_manager_clone.check_all_round_restarts(&message_broadcaster_clone);
             }

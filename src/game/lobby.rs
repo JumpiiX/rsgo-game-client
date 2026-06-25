@@ -12,6 +12,9 @@ pub const BOMB_TIMER_SECS: u64 = 40;
 /// is planted, this timer no longer matters — only BOMB_TIMER_SECS does.
 pub const ROUND_TIMER_SECS: u64 = 100;
 
+/// Round wins needed to win the whole match (first to 7).
+pub const ROUND_WINS_TO_WIN_MATCH: i32 = 7;
+
 #[derive(Debug, Clone)]
 pub enum GameMode {
     Deathmatch,
@@ -66,6 +69,7 @@ pub struct Lobby {
     pub attacking_team: TeamColor, // Which team is attacking this half
     pub spawn_system: SpawnSystem, // Spawn system for team-based spawning
     pub structures: Vec<crate::game::collision::Wall>, // player-placed walls (for shot occlusion)
+    pub match_end_announced: bool, // so the MatchEnd message is broadcast exactly once
 }
 
 impl Lobby {
@@ -94,6 +98,7 @@ impl Lobby {
             attacking_team: TeamColor::Red,  // Red team attacks first
             spawn_system: SpawnSystem::new(),
             structures: Vec::new(),
+            match_end_announced: false,
         }
     }
 
@@ -122,6 +127,7 @@ impl Lobby {
             attacking_team: TeamColor::Red,  // Red team attacks first
             spawn_system: SpawnSystem::new(),
             structures: Vec::new(),
+            match_end_announced: false,
         }
     }
 
@@ -510,8 +516,8 @@ impl Lobby {
             }
         }
         
-        // Check for match end (first to 7 round wins)
-        if self.orange_score >= 7 || self.red_score >= 7 {
+        // Check for match end (first to ROUND_WINS_TO_WIN_MATCH round wins)
+        if self.orange_score >= ROUND_WINS_TO_WIN_MATCH || self.red_score >= ROUND_WINS_TO_WIN_MATCH {
             self.game_state = GameState::MatchEnd;
         }
         
@@ -542,6 +548,19 @@ impl Lobby {
         (false, false)
     }
     
+    /// If the match has just ended (a team reached 7 round wins → game_state is
+    /// MatchEnd) and we haven't announced it yet, return the winning team ("orange"
+    /// or "red") ONCE and mark it announced so the MatchEnd message is broadcast a
+    /// single time. Returns None otherwise.
+    pub fn take_match_end_winner(&mut self) -> Option<&'static str> {
+        if matches!(self.game_state, GameState::MatchEnd) && !self.match_end_announced {
+            self.match_end_announced = true;
+            let winner = if self.orange_score >= ROUND_WINS_TO_WIN_MATCH { "orange" } else { "red" };
+            return Some(winner);
+        }
+        None
+    }
+
     pub fn switch_sides(&mut self) {
         // Switch which team is attacking
         self.attacking_team = match self.attacking_team {
