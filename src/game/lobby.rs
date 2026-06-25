@@ -557,19 +557,42 @@ impl Lobby {
         if !matches!(self.game_state, GameState::BuildPhase | GameState::Playing) {
             return None;
         }
-        
+
         let orange_alive = self.orange_team.iter()
             .any(|id| self.players.get(id).map_or(false, |p| p.alive));
         let red_alive = self.red_team.iter()
             .any(|id| self.players.get(id).map_or(false, |p| p.alive));
-        
-        if !orange_alive && red_alive {
-            Some(TeamColor::Red)
+
+        let winner = if !orange_alive && red_alive {
+            TeamColor::Red
         } else if orange_alive && !red_alive {
-            Some(TeamColor::Orange)
+            TeamColor::Orange
         } else {
-            None
+            return None;
+        };
+
+        // POST-PLANT RULE (CS/Valorant): once the bomb is planted, killing all the
+        // ATTACKERS does NOT win the round — the bomb is ticking and the defenders
+        // must DEFUSE it (or it explodes and attackers win even while dead). So if
+        // the bomb is planted and the would-be winner is the DEFENDING team, the
+        // round does not end on elimination. (If the DEFENDERS are wiped post-plant,
+        // attackers still win immediately — no one is left to defuse.)
+        if self.bomb_planted {
+            let defending_team = match self.attacking_team {
+                TeamColor::Orange => TeamColor::Red,
+                TeamColor::Red => TeamColor::Orange,
+            };
+            // Compare by discriminant (TeamColor isn't PartialEq).
+            let winner_is_defender = matches!(
+                (&winner, &defending_team),
+                (TeamColor::Orange, TeamColor::Orange) | (TeamColor::Red, TeamColor::Red)
+            );
+            if winner_is_defender {
+                return None; // defenders must defuse, not just kill
+            }
         }
+
+        Some(winner)
     }
 
     pub fn get_spawn_position(&self, player_id: &str) -> (f32, f32, f32) {
