@@ -476,8 +476,9 @@ impl MessageHandler {
         if let Some(lobby_id) = self.player_lobbies.lock().unwrap().get(player_id).cloned() {
             // Calculate cost based on structure type
             let cost = match structure_type.as_str() {
-                "large" => 200,
-                "small" | "barrier" => 100,
+                "large" => 800,
+                "destructible" => 600,
+                "small" | "barrier" => 400,
                 _ => 0,
             };
             
