@@ -39,7 +39,7 @@ impl Player {
             alive: true,
             kills: 0,
             deaths: 0,
-            money: 800, // Starting money in CS:GO
+            money: 800,
             has_bomb: false,
             team: None,
             last_hit_time: None,
@@ -54,23 +54,23 @@ impl Player {
         self.rotation_x = rotation_x;
         self.rotation_y = rotation_y;
     }
-    
+
     pub fn take_damage(&mut self, damage: i32) -> bool {
         self.last_hit_time = Some(Instant::now());
         self.shield_regen_active = false;
-        
+
         let mut remaining_damage = damage;
-        
+
         if self.shield > 0 {
             let shield_damage = remaining_damage.min(self.shield);
             self.shield -= shield_damage;
             remaining_damage -= shield_damage;
         }
-        
+
         if remaining_damage > 0 {
             self.health -= remaining_damage;
         }
-        
+
         if self.health <= 0 {
             self.health = 0;
             self.alive = false;
@@ -79,25 +79,25 @@ impl Player {
             false
         }
     }
-    
+
     pub fn update_shield_regen(&mut self) -> bool {
         let mut shield_changed = false;
-        
+
         if let Some(last_hit) = self.last_hit_time {
             let time_since_hit = last_hit.elapsed();
-            
+
             if time_since_hit >= Duration::from_secs(5) && self.shield < 50 && self.alive {
                 if !self.shield_regen_active {
                     self.shield_regen_active = true;
                 }
-                
+
                 let old_shield = self.shield;
                 self.shield = (self.shield + 1).min(50);
-                
+
                 if self.shield != old_shield {
                     shield_changed = true;
                 }
-                
+
                 if self.shield >= 50 {
                     self.shield_regen_active = false;
                 }
@@ -107,16 +107,16 @@ impl Player {
             self.shield = 50;
             shield_changed = old_shield != self.shield;
         }
-        
+
         shield_changed
     }
-    
+
     pub fn add_kill(&mut self) {
         self.kills += 1;
-        self.money += 300; // Kill reward
-        self.money = self.money.min(16000); // Max money cap
+        self.money += 300;
+        self.money = self.money.min(16000);
     }
-    
+
     pub fn respawn(&mut self, spawn_pos: (f32, f32, f32)) {
         self.x = spawn_pos.0;
         self.y = spawn_pos.1;

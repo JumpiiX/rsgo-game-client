@@ -25,8 +25,7 @@ impl MessageHandler {
     }
 
     pub fn handle_message(&self, player_id: &str, message: ClientMessage) {
-        // Per-message trace, skipping the high-frequency Move stream so it isn't
-        // spammed. (Was error! on every message, including Move — pure noise.)
+
         if !matches!(message, ClientMessage::Move { .. }) {
             log::debug!(">>> Received message from {}: {:?}", player_id, message);
         }
@@ -88,18 +87,17 @@ impl MessageHandler {
         log::info!("Deathmatch lobby {} has {} existing players", deathmatch_lobby_id, existing_players.len());
         for existing_player in existing_players {
             log::info!("Sending existing player {} to new player {}", existing_player.id, player_id);
-            let join_msg = ServerMessage::PlayerJoined { 
-                player: existing_player 
+            let join_msg = ServerMessage::PlayerJoined {
+                player: existing_player
             };
             self.message_broadcaster.send_to_player(player_id, &join_msg);
         }
 
         self.lobby_manager.join_lobby(&deathmatch_lobby_id, player.clone());
         self.player_lobbies.lock().unwrap().insert(player_id.to_string(), deathmatch_lobby_id.clone());
-        
-        // Add player to lobby broadcast group
+
         self.message_broadcaster.add_player_to_lobby(&deathmatch_lobby_id, player_id);
-        
+
         let welcome_msg = ServerMessage::Welcome {
             player_id: player_id.to_string(),
             lobby_id: deathmatch_lobby_id.clone(),
@@ -134,42 +132,36 @@ impl MessageHandler {
     }
 
     fn handle_create_team_lobby(&self, player_id: &str, name: String) {
-        // First, remove player from their current lobby (likely deathmatch)
+
         if let Some(old_lobby_id) = self.player_lobbies.lock().unwrap().get(player_id).cloned() {
             log::info!("Removing player {} from lobby {} to join team selection", player_id, old_lobby_id);
             self.lobby_manager.leave_lobby(&old_lobby_id, player_id);
             self.message_broadcaster.remove_player_from_lobby(&old_lobby_id, player_id);
-            
-            // Notify others in the old lobby that this player left
-            let msg = ServerMessage::PlayerLeft { 
-                player_id: player_id.to_string() 
+
+            let msg = ServerMessage::PlayerLeft {
+                player_id: player_id.to_string()
             };
             self.message_broadcaster.broadcast_to_lobby(&old_lobby_id, &msg, None);
             self.broadcast_scoreboard(&old_lobby_id);
         }
-        
-        // Get or join the shared team selection lobby
+
         let team_lobby_id = self.lobby_manager.get_or_create_team_selection_lobby();
-        
-        // Add player to the team selection lobby - will get proper spawn when team is assigned
-        let spawn_pos = (0.0, 5.0, 0.0);  // Temporary spawn until team is chosen
+
+        let spawn_pos = (0.0, 5.0, 0.0);
         let player = Player::new(player_id.to_string(), name, spawn_pos);
         self.lobby_manager.join_lobby(&team_lobby_id, player);
-        
-        // Store the lobby ID for this player
+
         self.player_lobbies.lock().unwrap().insert(player_id.to_string(), team_lobby_id.clone());
-        
-        // Add player to lobby broadcast group
+
         self.message_broadcaster.add_player_to_lobby(&team_lobby_id, player_id);
-        
-        let msg = ServerMessage::TeamLobbyCreated { 
-            lobby_id: team_lobby_id.clone() 
+
+        let msg = ServerMessage::TeamLobbyCreated {
+            lobby_id: team_lobby_id.clone()
         };
         self.message_broadcaster.send_to_player(player_id, &msg);
-        
-        // Send current team state to the new player
+
         self.broadcast_team_update(&team_lobby_id);
-        
+
         log::info!("Player {} joined team selection lobby {}", player_id, team_lobby_id);
     }
 
@@ -180,7 +172,7 @@ impl MessageHandler {
                 "red" => TeamColor::Red,
                 _ => return,
             };
-            
+
             if self.lobby_manager.join_team(&lobby_id, player_id, team_color) {
                 self.broadcast_team_update(&lobby_id);
                 log::info!("Player {} joined {} team in lobby {}", player_id, team, lobby_id);
@@ -197,29 +189,27 @@ impl MessageHandler {
         if let Some(lobby_id) = self.player_lobbies.lock().unwrap().get(player_id).cloned() {
             log::info!("Player {} found in lobby {}", player_id, lobby_id);
             if self.lobby_manager.start_team_game(&lobby_id) {
-                // Get all players in the lobby
+
                 let lobby_players = self.lobby_manager.get_lobby_players(&lobby_id);
-                
-                // Send all existing players to each player (so they can see each other)
+
                 for player in &lobby_players {
                     log::info!("Sending other players to {}", player.id);
                     for other_player in &lobby_players {
                         if player.id != other_player.id {
                             log::info!("Sending player {} to player {}", other_player.id, player.id);
-                            let join_msg = ServerMessage::PlayerJoined { 
-                                player: other_player.clone() 
+                            let join_msg = ServerMessage::PlayerJoined {
+                                player: other_player.clone()
                             };
                             self.message_broadcaster.send_to_player(&player.id, &join_msg);
                         }
                     }
                 }
-                
-                let msg = ServerMessage::GameStarted { 
-                    game_mode: "team".to_string() 
+
+                let msg = ServerMessage::GameStarted {
+                    game_mode: "team".to_string()
                 };
                 self.message_broadcaster.broadcast_to_lobby(&lobby_id, &msg, None);
-                
-                // Send round start message
+
                 let attacking_team = self.lobby_manager.get_attacking_team(&lobby_id)
                     .map(|t| match t { crate::game::TeamColor::Red => "red", crate::game::TeamColor::Orange => "orange" })
                     .unwrap_or("red");
@@ -231,18 +221,16 @@ impl MessageHandler {
                     attacking_team: attacking_team.to_string(),
                 };
                 self.message_broadcaster.broadcast_to_lobby(&lobby_id, &round_msg, None);
-                
-                // Send respawn messages for all players with their correct team spawn positions
+
                 for player in &lobby_players {
-                    let respawn_msg = ServerMessage::PlayerRespawned { 
-                        player: player.clone() 
+                    let respawn_msg = ServerMessage::PlayerRespawned {
+                        player: player.clone()
                     };
                     self.message_broadcaster.broadcast_to_lobby(&lobby_id, &respawn_msg, None);
-                    log::info!("Sent respawn for player {} at position ({}, {}, {})", 
+                    log::info!("Sent respawn for player {} at position ({}, {}, {})",
                         player.id, player.x, player.y, player.z);
                 }
-                
-                // Send bomb to one player
+
                 if let Some(bomb_carrier_id) = self.lobby_manager.get_bomb_carrier(&lobby_id) {
                     let bomb_msg = ServerMessage::GiveBomb {
                         player_id: bomb_carrier_id.clone(),
@@ -250,10 +238,9 @@ impl MessageHandler {
                     self.message_broadcaster.send_to_player(&bomb_carrier_id, &bomb_msg);
                     log::info!("Bomb given to player {}", bomb_carrier_id);
                 }
-                
-                // Update scoreboard after game starts
+
                 self.broadcast_scoreboard(&lobby_id);
-                
+
                 log::info!("Team game started in lobby {} with {} players", lobby_id, lobby_players.len());
             }
         }
@@ -267,15 +254,15 @@ impl MessageHandler {
             let red_players: Vec<TeamPlayer> = red_team.into_iter()
                 .map(|(id, name)| TeamPlayer { id, name })
                 .collect();
-            
+
             let can_start = orange_players.len() >= 1 && red_players.len() >= 1;
-            
+
             let msg = ServerMessage::TeamUpdate {
                 orange_team: orange_players,
                 red_team: red_players,
                 can_start,
             };
-            
+
             self.message_broadcaster.broadcast_to_lobby(lobby_id, &msg, None);
         }
     }
@@ -301,9 +288,7 @@ impl MessageHandler {
 
     fn handle_hit(&self, shooter_id: &str, target_player_id: String, _killed: bool) {
         if let Some(lobby_id) = self.player_lobbies.lock().unwrap().get(shooter_id).cloned() {
-            // SERVER-SIDE WALL OCCLUSION: reject the hit if a wall (map or placed)
-            // blocks the line from shooter to target. This stops shooting through
-            // walls; we trust the client's target claim but verify line-of-sight.
+
             if self.lobby_manager.shot_is_blocked(&lobby_id, shooter_id, &target_player_id) {
                 log::info!("Hit rejected: wall between {} and {}", shooter_id, target_player_id);
                 return;
@@ -311,7 +296,7 @@ impl MessageHandler {
             if let Some((died, health, shield)) = self.lobby_manager.damage_player(&lobby_id, &target_player_id, 50) {
                 if died {
                     self.lobby_manager.add_kill_to_player(&lobby_id, shooter_id);
-                    
+
                     let lobby_players = self.lobby_manager.get_lobby_players(&lobby_id);
                     let victim_name = lobby_players.iter().find(|p| p.id == target_player_id)
                         .map(|p| p.name.clone())
@@ -319,21 +304,20 @@ impl MessageHandler {
                     let killer_name = lobby_players.iter().find(|p| p.id == shooter_id)
                         .map(|p| p.name.clone())
                         .unwrap_or_else(|| "Unknown".to_string());
-                    
-                    // Send money update to killer
+
                     if let Some(killer) = lobby_players.iter().find(|p| p.id == shooter_id) {
                         self.message_broadcaster.send_to_player(
                             shooter_id,
-                            &ServerMessage::MoneyUpdate { 
+                            &ServerMessage::MoneyUpdate {
                                 player_id: shooter_id.to_string(),
                                 money: killer.money
                             }
                         );
                     }
-                    
+
                     self.message_broadcaster.broadcast_to_lobby(
                         &lobby_id,
-                        &ServerMessage::PlayerDied { 
+                        &ServerMessage::PlayerDied {
                             player_id: target_player_id.clone(),
                             killer_id: shooter_id.to_string(),
                             victim_name,
@@ -341,8 +325,7 @@ impl MessageHandler {
                         },
                         None
                     );
-                    
-                    // Check if dead player had the bomb and drop it
+
                     if let Some(position) = self.lobby_manager.drop_bomb(&lobby_id, &target_player_id) {
                         let msg = ServerMessage::BombDropped {
                             position_x: position.0,
@@ -352,20 +335,19 @@ impl MessageHandler {
                         self.message_broadcaster.broadcast_to_lobby(&lobby_id, &msg, None);
                         log::info!("Dead player {} dropped bomb at ({}, {}, {})", target_player_id, position.0, position.1, position.2);
                     }
-                    
+
                     self.broadcast_scoreboard(&lobby_id);
-                    
-                    // Check for team elimination after death (only in team mode)
+
                     if let Some(winning_team) = self.lobby_manager.check_team_elimination(&lobby_id) {
                         self.handle_round_end(&lobby_id, winning_team, "Team Eliminated");
                     }
-                    
+
                 } else {
                     self.message_broadcaster.broadcast_to_lobby(
                         &lobby_id,
-                        &ServerMessage::PlayerHit { 
-                            player_id: target_player_id, 
-                            damage: 50, 
+                        &ServerMessage::PlayerHit {
+                            player_id: target_player_id,
+                            damage: 50,
                             health,
                             shield
                         },
@@ -377,27 +359,27 @@ impl MessageHandler {
             }
         }
     }
-    
+
     fn handle_respawn(&self, player_id: &str) {
         if let Some(lobby_id) = self.player_lobbies.lock().unwrap().get(player_id).cloned() {
-            // Check if respawn is allowed (only in deathmatch or between rounds)
+
             if !self.lobby_manager.can_respawn(&lobby_id) {
                 log::info!("Player {} tried to respawn but it's not allowed during round", player_id);
                 return;
             }
-            
+
             if let Some(player) = self.lobby_manager.respawn_player(&lobby_id, player_id) {
                 self.message_broadcaster.broadcast_to_lobby(
                     &lobby_id,
                     &ServerMessage::PlayerRespawned { player: player.clone() },
                     None
                 );
-                
+
                 log::info!("Player {} respawned at ({}, {}, {})", player_id, player.x, player.y, player.z);
             }
         }
     }
-    
+
     fn broadcast_scoreboard(&self, lobby_id: &str) {
         log::info!("Broadcasting scoreboard update for lobby {}", lobby_id);
         let scoreboard_data = self.lobby_manager.get_lobby_scoreboard(lobby_id);
@@ -405,36 +387,36 @@ impl MessageHandler {
         let scoreboard_message = ServerMessage::ScoreboardUpdate {
             players: scoreboard_data,
         };
-        
+
         self.message_broadcaster.broadcast_to_lobby(lobby_id, &scoreboard_message, None);
         log::info!("Scoreboard broadcast complete for lobby {}", lobby_id);
     }
 
     pub fn handle_player_disconnect(&self, player_id: &str) {
         if let Some(lobby_id) = self.player_lobbies.lock().unwrap().remove(player_id) {
-            // Remove player from broadcast group
+
             self.message_broadcaster.remove_player_from_lobby(&lobby_id, player_id);
-            
+
             self.lobby_manager.leave_lobby(&lobby_id, player_id);
-            
-            let msg = ServerMessage::PlayerLeft { 
-                player_id: player_id.to_string() 
+
+            let msg = ServerMessage::PlayerLeft {
+                player_id: player_id.to_string()
             };
             self.message_broadcaster.broadcast_to_lobby(&lobby_id, &msg, None);
-            
+
             self.broadcast_team_update(&lobby_id);
             self.broadcast_scoreboard(&lobby_id);
-            
+
             log::info!("Player {} disconnected from lobby {}", player_id, lobby_id);
         }
     }
-    
+
     fn handle_plant_bomb(&self, player_id: &str, position_x: Option<f32>, position_z: Option<f32>) {
         log::error!("=== PLANT BOMB REQUEST from player {} at position ({:?}, {:?})", player_id, position_x, position_z);
-        
+
         if let Some(lobby_id) = self.player_lobbies.lock().unwrap().get(player_id).cloned() {
             log::error!("Player {} is in lobby {}", player_id, lobby_id);
-            
+
             if let Some((x, z)) = self.lobby_manager.plant_bomb(&lobby_id, player_id, position_x, position_z) {
                 let msg = ServerMessage::BombPlanted {
                     player_id: player_id.to_string(),
@@ -451,92 +433,79 @@ impl MessageHandler {
             log::error!("❌ Player {} not found in any lobby!", player_id);
         }
     }
-    
+
     fn handle_defuse_bomb(&self, player_id: &str) {
         if let Some(lobby_id) = self.player_lobbies.lock().unwrap().get(player_id).cloned() {
-            // defuse_bomb validates (defender, planted, near, alive) and ends the
-            // round in the defenders' favour, returning the winning team.
+
             if let Some(winning_team) = self.lobby_manager.defuse_bomb(&lobby_id, player_id) {
-                // Tell everyone the bomb was defused (stops the timer client-side).
+
                 let defused_msg = ServerMessage::BombDefused {
                     player_id: player_id.to_string(),
                 };
                 self.message_broadcaster.broadcast_to_lobby(&lobby_id, &defused_msg, None);
                 log::info!("Player {} defused the bomb in lobby {}", player_id, lobby_id);
 
-                // The round was already ended inside defuse_bomb, so don't score
-                // it again — just broadcast the result and start the next round.
                 self.finish_round(&lobby_id, winning_team, "Bomb Defused", true);
             }
         }
     }
-    
+
     fn handle_place_structure(&self, player_id: &str, structure_type: String, x: f32, y: f32, z: f32) {
-        // Handle structure placement during build phase
+
         if let Some(lobby_id) = self.player_lobbies.lock().unwrap().get(player_id).cloned() {
-            // Calculate cost based on structure type
+
             let cost = match structure_type.as_str() {
                 "large" => 800,
                 "destructible" => 600,
                 "small" | "barrier" => 400,
                 _ => 0,
             };
-            
-            // Deduct money from player
+
             if cost > 0 {
                 if let Some(mut player) = self.lobby_manager.get_player(&lobby_id, player_id) {
                     if player.money >= cost {
                         player.money -= cost;
-                        // Update player in lobby
+
                         self.lobby_manager.update_player_money(&lobby_id, player_id, player.money);
-                        
-                        log::info!("Player {} placed {} at ({}, rotation: {}, {}) for ${}, money: ${}", 
+
+                        log::info!("Player {} placed {} at ({}, rotation: {}, {}) for ${}, money: ${}",
                             player_id, structure_type, x, y, z, cost, player.money);
-                        
-                        // Send money update to player
+
                         let money_msg = ServerMessage::MoneyUpdate {
                             player_id: player_id.to_string(),
                             money: player.money,
                         };
                         self.message_broadcaster.send_to_player(player_id, &money_msg);
                     } else {
-                        log::warn!("Player {} tried to place {} but only has ${} (needs ${})", 
+                        log::warn!("Player {} tried to place {} but only has ${} (needs ${})",
                             player_id, structure_type, player.money, cost);
-                        return; // Don't place if not enough money
+                        return;
                     }
                 }
             }
-            
-            // Record the wall server-side for shot occlusion (the `y` field is
-            // actually the wall's Y rotation, not a height).
+
             self.lobby_manager.add_structure(&lobby_id, &structure_type, x, z, y);
 
-            // Broadcast structure placement to all players in the lobby
             let msg = ServerMessage::StructurePlaced {
                 player_id: player_id.to_string(),
                 structure_type,
                 x,
-                y,  // This is actually the rotation value
+                y,
                 z,
             };
 
-            // Send to all players except the one who placed it
             self.message_broadcaster.broadcast_to_lobby(&lobby_id, &msg, Some(player_id));
         }
     }
 
-    // A client reports a bullet hole on a destructible wall. We record it on the
-    // matching server wall (so shots can pass through it) and broadcast it to ALL
-    // clients (including the shooter) so every client renders the same holes.
     fn handle_wall_hit(&self, player_id: &str, wall_x: f32, wall_z: f32, local_x: f32, world_y: f32, radius: f32) {
         if let Some(lobby_id) = self.player_lobbies.lock().unwrap().get(player_id).cloned() {
-            // Record on the nearest matching destructible wall; returns false if
-            // no wall matched or it already has the max holes.
+
             if self.lobby_manager.add_wall_hole(&lobby_id, wall_x, wall_z, local_x, world_y, radius) {
                 self.message_broadcaster.broadcast_to_lobby(
                     &lobby_id,
                     &ServerMessage::WallHole { wall_x, wall_z, local_x, world_y, radius },
-                    None, // send to everyone — even the shooter renders from the authoritative msg
+                    None,
                 );
             }
         }
@@ -546,24 +515,19 @@ impl MessageHandler {
         self.finish_round(lobby_id, winning_team, reason, false);
     }
 
-    // Broadcasts round end and schedules the next round. `already_ended` should
-    // be true when the round was already ended on the lobby (e.g. defuse, which
-    // ends the round itself), to avoid scoring it twice.
     fn finish_round(&self, lobby_id: &str, winning_team: crate::game::TeamColor, reason: &str, already_ended: bool) {
-        // End the round (unless the caller already did)
+
         if !already_ended {
             self.lobby_manager.end_round(lobby_id, winning_team.clone(), reason);
         }
 
-        // Get scores
         let (orange_score, red_score) = self.lobby_manager.get_team_scores(lobby_id);
-        
-        // Send round end message
+
         let winner_str = match winning_team {
             crate::game::TeamColor::Orange => "orange",
             crate::game::TeamColor::Red => "red",
         };
-        
+
         let msg = ServerMessage::RoundEnd {
             winner: winner_str.to_string(),
             reason: reason.to_string(),
@@ -571,8 +535,7 @@ impl MessageHandler {
             red_score,
         };
         self.message_broadcaster.broadcast_to_lobby(lobby_id, &msg, None);
-        
-        // Send money updates to all players after round end bonuses
+
         let players = self.lobby_manager.get_lobby_players(lobby_id);
         for player in players {
             let money_msg = ServerMessage::MoneyUpdate {
@@ -583,12 +546,6 @@ impl MessageHandler {
             log::info!("Sent money update after round end to player {}: ${}", player.id, player.money);
         }
 
-        // MATCH OVER? Decide SYNCHRONOUSLY (before scheduling any restart) whether
-        // this round win pushed a team to 7. If so, announce MatchEnd now and do
-        // NOT spawn the next-round thread — otherwise round 8 would start. We check
-        // is_match_over (read-only) here and consume the announce flag so it's sent
-        // exactly once (the 1s tick path also calls take_match_end_winner, but the
-        // flag guarantees a single broadcast).
         if self.lobby_manager.is_match_over(lobby_id) {
             if let Some(winner) = self.lobby_manager.take_match_end_winner(lobby_id) {
                 self.message_broadcaster.broadcast_to_lobby(
@@ -598,20 +555,17 @@ impl MessageHandler {
                 );
                 log::info!("🏆 MATCH ENDED in lobby {}: {} wins", lobby_id, winner);
             }
-            return; // no next round
+            return;
         }
 
-        // Start next round after delay (5 seconds)
         let lobby_id = lobby_id.to_string();
         let broadcaster = self.message_broadcaster.clone();
         let lobby_manager = self.lobby_manager.clone();
 
         std::thread::spawn(move || {
-            // Post-round window: players stay alive and can keep fighting for a
-            // few seconds before the next round resets everything.
+
             std::thread::sleep(std::time::Duration::from_secs(5));
 
-            // Safety: if the match somehow ended during the window, don't restart.
             if lobby_manager.is_match_over(&lobby_id) {
                 if let Some(winner) = lobby_manager.take_match_end_winner(&lobby_id) {
                     broadcaster.broadcast_to_lobby(
@@ -624,11 +578,8 @@ impl MessageHandler {
                 return;
             }
 
-            // Start next round
             let sides_switched = lobby_manager.start_new_round(&lobby_id);
 
-            // Halftime: clear all structures built in the first half (both the
-            // client meshes via MapReset AND our server-side occlusion walls).
             if sides_switched {
                 lobby_manager.clear_structures(&lobby_id);
                 broadcaster.broadcast_to_lobby(&lobby_id, &ServerMessage::MapReset, None);
@@ -648,17 +599,15 @@ impl MessageHandler {
                 attacking_team: attacking_team.to_string(),
             };
             broadcaster.broadcast_to_lobby(&lobby_id, &round_msg, None);
-            
-            // Send all players their respawn messages with correct positions
+
             let players = lobby_manager.get_lobby_players(&lobby_id);
             for player in players.iter() {
-                let respawn_msg = ServerMessage::PlayerRespawned { 
-                    player: player.clone() 
+                let respawn_msg = ServerMessage::PlayerRespawned {
+                    player: player.clone()
                 };
                 broadcaster.broadcast_to_lobby(&lobby_id, &respawn_msg, None);
             }
-            
-            // Send money updates to all players at round start
+
             for player in players {
                 let money_msg = ServerMessage::MoneyUpdate {
                     player_id: player.id.clone(),
@@ -667,8 +616,7 @@ impl MessageHandler {
                 broadcaster.send_to_player(&player.id, &money_msg);
                 log::info!("Sent money update at round start to player {}: ${}", player.id, player.money);
             }
-            
-            // Give bomb to attacker
+
             if let Some(bomb_carrier_id) = lobby_manager.get_bomb_carrier(&lobby_id) {
                 let bomb_msg = ServerMessage::GiveBomb {
                     player_id: bomb_carrier_id.clone(),
@@ -677,7 +625,7 @@ impl MessageHandler {
             }
         });
     }
-    
+
     fn handle_drop_bomb(&self, player_id: &str) {
         if let Some(lobby_id) = self.player_lobbies.lock().unwrap().get(player_id).cloned() {
             if let Some(position) = self.lobby_manager.drop_bomb(&lobby_id, player_id) {
@@ -691,7 +639,7 @@ impl MessageHandler {
             }
         }
     }
-    
+
     fn handle_pickup_bomb(&self, player_id: &str) {
         if let Some(lobby_id) = self.player_lobbies.lock().unwrap().get(player_id).cloned() {
             if let Some(player_name) = self.lobby_manager.pickup_bomb(&lobby_id, player_id) {

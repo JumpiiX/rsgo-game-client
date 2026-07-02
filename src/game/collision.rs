@@ -1,27 +1,14 @@
-// Server-side shot occlusion: does a wall block the line from shooter to target?
-//
-// Walls are axis-aligned boxes that may be rotated about the Y axis (the map's
-// diagonal walls). To test a segment against a rotated box we transform the
-// segment into the box's LOCAL space (un-rotate about Y around the box center),
-// where the box becomes axis-aligned, then run a standard slab (ray-AABB) test.
-//
-// We only care about XZ occlusion plus a Y band (so a shot under/over a wall
-// isn't wrongly blocked). Players aim roughly at torso/head height, well within
-// every wall's Y span, so the Y band mostly guards against future low cover.
-
-// A static map wall (generated from the frontend MapBuilder — see MAP_WALLS).
 #[derive(Debug, Clone, Copy)]
 pub struct MapWall {
     pub cx: f32,
     pub cz: f32,
-    pub hw: f32,   // half-extent along the wall's LOCAL x (width/2)
-    pub hd: f32,   // half-extent along the wall's LOCAL z (depth/2)
-    pub rot: f32,  // rotation about Y, radians
+    pub hw: f32,
+    pub hd: f32,
+    pub rot: f32,
     pub y_min: f32,
     pub y_max: f32,
 }
 
-// A wall placed by a player during build mode (+ its bullet holes, for Phase 2).
 #[derive(Debug, Clone)]
 pub struct Wall {
     pub cx: f32,
@@ -32,14 +19,14 @@ pub struct Wall {
     pub y_min: f32,
     pub y_max: f32,
     pub destructible: bool,
-    // Bullet holes in LOCAL wall coords (x along width, y vertical). Phase 2.
+
     pub holes: Vec<Hole>,
 }
 
 #[derive(Debug, Clone, Copy)]
 pub struct Hole {
-    pub lx: f32, // local x (along width)
-    pub ly: f32, // local y (vertical)
+    pub lx: f32,
+    pub ly: f32,
     pub radius: f32,
 }
 
@@ -72,18 +59,13 @@ pub struct BoxParams {
     pub y_max: f32,
 }
 
-/// Does the segment from `s` (shooter) to `t` (target) intersect this box?
-/// Returns Some(local_hit_xy) at the entry point in the box's LOCAL frame
-/// (x along width, y vertical) if it hits within [0,1] of the segment, else None.
-/// The local hit lets Phase 2 check whether the entry lands inside a bullet hole.
 pub fn segment_hits_box(s: (f32, f32, f32), t: (f32, f32, f32), b: &BoxParams) -> Option<(f32, f32)> {
-    // Translate so the box center is the origin, then un-rotate about Y by -rot
-    // so the box is axis-aligned. (Y is unchanged by a Y-rotation.)
+
     let (sin, cos) = (-b.rot).sin_cos();
     let local = |p: (f32, f32, f32)| {
         let dx = p.0 - b.cx;
         let dz = p.2 - b.cz;
-        // rotate (dx,dz) by -rot:  x' = dx*cos - dz*sin ; z' = dx*sin + dz*cos
+
         let lx = dx * cos - dz * sin;
         let lz = dx * sin + dz * cos;
         (lx, p.1, lz)
@@ -92,15 +74,12 @@ pub fn segment_hits_box(s: (f32, f32, f32), t: (f32, f32, f32), b: &BoxParams) -
     let lt = local(t);
     let d = (lt.0 - ls.0, lt.1 - ls.1, lt.2 - ls.2);
 
-    // Slab test on the axis-aligned box [-hw,hw] x [y_min - cy? ...] — note Y is
-    // absolute (not centered), so use y_min/y_max directly. X/Z are centered.
     let mut tmin = 0.0f32;
     let mut tmax = 1.0f32;
 
-    // Helper: clip the segment parameter range against one axis slab [lo,hi].
     let clip = |origin: f32, dir: f32, lo: f32, hi: f32, tmin: &mut f32, tmax: &mut f32| -> bool {
         if dir.abs() < 1e-8 {
-            // Parallel to slab: must already be inside.
+
             return origin >= lo && origin <= hi;
         }
         let mut t0 = (lo - origin) / dir;
@@ -111,39 +90,36 @@ pub fn segment_hits_box(s: (f32, f32, f32), t: (f32, f32, f32), b: &BoxParams) -
         *tmin <= *tmax
     };
 
-    if !clip(ls.0, d.0, -b.hw, b.hw, &mut tmin, &mut tmax) { return None; }   // local X (width)
-    if !clip(ls.2, d.2, -b.hd, b.hd, &mut tmin, &mut tmax) { return None; }   // local Z (depth)
-    if !clip(ls.1, d.1, b.y_min, b.y_max, &mut tmin, &mut tmax) { return None; } // absolute Y
+    if !clip(ls.0, d.0, -b.hw, b.hw, &mut tmin, &mut tmax) { return None; }
+    if !clip(ls.2, d.2, -b.hd, b.hd, &mut tmin, &mut tmax) { return None; }
+    if !clip(ls.1, d.1, b.y_min, b.y_max, &mut tmin, &mut tmax) { return None; }
 
     if tmin > tmax || tmax < 0.0 || tmin > 1.0 {
         return None;
     }
-    // Entry point in local frame (clamp tmin to >=0 in case shooter is inside).
+
     let te = tmin.max(0.0);
     let hit_lx = ls.0 + d.0 * te;
     let hit_ly = ls.1 + d.1 * te;
     Some((hit_lx, hit_ly))
 }
 
-/// Is the shot from `shooter` to `target` blocked by any wall?
-/// `placed` are the build-mode walls (with holes). Map walls are always solid.
-/// A destructible wall does NOT block if the entry point falls inside a hole.
 pub fn shot_blocked(
     shooter: (f32, f32, f32),
     target: (f32, f32, f32),
     placed: &[Wall],
 ) -> bool {
-    // Static map walls — always solid.
+
     for mw in MAP_WALLS {
         if segment_hits_box(shooter, target, &mw.as_box()).is_some() {
             return true;
         }
     }
-    // Player-placed walls — solid unless the entry lands in a bullet hole.
+
     for w in placed {
         if let Some((lx, ly)) = segment_hits_box(shooter, target, &w.as_box()) {
             if w.destructible && in_hole(lx, ly, &w.holes) {
-                continue; // shot passes through the hole
+                continue;
             }
             return true;
         }
@@ -159,8 +135,6 @@ fn in_hole(lx: f32, ly: f32, holes: &[Hole]) -> bool {
     })
 }
 
-// AUTO-GENERATED from MapBuilder (do not hand-edit). 354 static map walls.
-// Each: center (x,z), half-extents (hw along local X, hd along local Z), rotation (rad about Y), y_min, y_max.
 pub const MAP_WALLS: &[MapWall] = &[
     MapWall { cx: 0.000, cz: -360.000, hw: 60.0000, hd: 2.0000, rot: 0.000000, y_min: 0.0, y_max: 25.0 },
     MapWall { cx: -60.000, cz: -333.051, hw: 2.0000, hd: 26.9490, rot: 0.000000, y_min: 0.0, y_max: 25.0 },

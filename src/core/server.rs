@@ -20,25 +20,21 @@ impl GameServer {
             Arc::clone(&message_broadcaster),
         ));
 
-        // Note: Shield updates and scoreboards are now handled per-lobby in the message handler
-        // No need for global periodic updates that broadcast to all players
-        
-        // Start a timer to check build phase timeouts and bomb explosions
         let lobby_manager_clone = Arc::clone(&lobby_manager);
         let message_broadcaster_clone = Arc::clone(&message_broadcaster);
         tokio::spawn(async move {
             let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(1));
             loop {
                 interval.tick().await;
-                // Check all lobbies for build phase timeout
+
                 lobby_manager_clone.check_all_build_phase_timeouts(&message_broadcaster_clone);
-                // Check all lobbies for round timeouts (attackers failed to plant in time)
+
                 lobby_manager_clone.check_all_round_timeouts(&message_broadcaster_clone);
-                // Check all lobbies for bomb explosions
+
                 lobby_manager_clone.check_all_bomb_explosions(&message_broadcaster_clone);
-                // Announce match end (a team reached 7 wins) before any restart.
+
                 lobby_manager_clone.check_all_match_ends(&message_broadcaster_clone);
-                // Check all lobbies for round restarts
+
                 lobby_manager_clone.check_all_round_restarts(&message_broadcaster_clone);
             }
         });

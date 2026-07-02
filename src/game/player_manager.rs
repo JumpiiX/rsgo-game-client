@@ -41,11 +41,11 @@ impl PlayerManager {
     pub fn get_player_count(&self) -> usize {
         self.players.lock().unwrap().len()
     }
-    
+
     pub fn damage_player(&self, player_id: &str, damage: i32) -> Option<(bool, i32, i32)> {
         let mut players = self.players.lock().unwrap();
         if let Some(player) = players.get_mut(player_id) {
-            // Don't allow damage to dead players
+
             if !player.alive {
                 return None;
             }
@@ -55,7 +55,7 @@ impl PlayerManager {
             None
         }
     }
-    
+
     pub fn add_kill_to_player(&self, player_id: &str) -> bool {
         let mut players = self.players.lock().unwrap();
         if let Some(player) = players.get_mut(player_id) {
@@ -65,7 +65,7 @@ impl PlayerManager {
             false
         }
     }
-    
+
     pub fn respawn_player(&self, player_id: &str, spawn_pos: (f32, f32, f32)) -> Option<Player> {
         let mut players = self.players.lock().unwrap();
         if let Some(player) = players.get_mut(player_id) {
@@ -75,20 +75,20 @@ impl PlayerManager {
             None
         }
     }
-    
+
     pub fn update_shields(&self) -> Vec<(String, i32)> {
         let mut players = self.players.lock().unwrap();
         let mut shield_updates = Vec::new();
-        
+
         for player in players.values_mut() {
             if player.update_shield_regen() {
                 shield_updates.push((player.id.clone(), player.shield));
             }
         }
-        
+
         shield_updates
     }
-    
+
     pub fn get_scoreboard_data(&self) -> Vec<ScoreboardPlayer> {
         let players = self.players.lock().unwrap();
         let mut scoreboard_players: Vec<ScoreboardPlayer> = players
@@ -99,9 +99,9 @@ impl PlayerManager {
                 kills: player.kills,
             })
             .collect();
-        
+
         scoreboard_players.sort_by(|a, b| b.kills.cmp(&a.kills));
-        
+
         scoreboard_players
     }
 }

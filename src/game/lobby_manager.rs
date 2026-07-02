@@ -17,7 +17,7 @@ impl LobbyManager {
             deathmatch_lobby_id: Mutex::new(None),
             team_selection_lobby_id: Mutex::new(None),
         };
-        
+
         manager.ensure_deathmatch_lobby();
         manager
     }
@@ -25,7 +25,7 @@ impl LobbyManager {
     fn ensure_deathmatch_lobby(&self) {
         let mut lobbies = self.lobbies.lock().unwrap();
         let mut dm_id = self.deathmatch_lobby_id.lock().unwrap();
-        
+
         if dm_id.is_none() {
             let lobby_id = Uuid::new_v4().to_string();
             let lobby = Lobby::new_deathmatch(lobby_id.clone());
@@ -37,8 +37,7 @@ impl LobbyManager {
     pub fn get_or_create_team_selection_lobby(&self) -> String {
         let mut lobbies = self.lobbies.lock().unwrap();
         let mut team_lobby_id = self.team_selection_lobby_id.lock().unwrap();
-        
-        // If there's already a team selection lobby with space, use it
+
         if let Some(id) = &*team_lobby_id {
             if let Some(lobby) = lobbies.get(id) {
                 if lobby.players.len() < 10 && !lobby.game_started {
@@ -46,28 +45,26 @@ impl LobbyManager {
                 }
             }
         }
-        
-        // Create a new team selection lobby
+
         let lobby_id = Uuid::new_v4().to_string();
         let lobby = Lobby::new_team_vs_team(lobby_id.clone());
         lobbies.insert(lobby_id.clone(), lobby);
         *team_lobby_id = Some(lobby_id.clone());
         lobby_id
     }
-    
+
     pub fn create_team_game_from_selection(&self, selection_lobby_id: &str) -> Option<String> {
-        // Create a new game lobby from the team selection
+
         let game_lobby_id = Uuid::new_v4().to_string();
         let game_lobby = Lobby::new_team_vs_team(game_lobby_id.clone());
-        
+
         let mut lobbies = self.lobbies.lock().unwrap();
         lobbies.insert(game_lobby_id.clone(), game_lobby);
-        
-        // Clear the selection lobby for next group
+
         if let Some(selection_lobby) = lobbies.get_mut(selection_lobby_id) {
             selection_lobby.game_started = true;
         }
-        
+
         Some(game_lobby_id)
     }
 
@@ -85,23 +82,19 @@ impl LobbyManager {
         }
     }
 
-    /// Record a player-placed wall in the lobby (for server-side shot occlusion).
-    /// `rot` is the wall's Y rotation; `structure_type` sets height + destructible.
     pub fn add_structure(&self, lobby_id: &str, structure_type: &str, x: f32, z: f32, rot: f32) {
         use crate::game::collision::Wall;
-        // Mirror the frontend wall dimensions: length 20, thickness 2, height by
-        // type (barrier = 10, large/destructible = 20). At rot 0 the long axis is
-        // X (width 20), so hw=10 (length/2), hd=1 (thickness/2).
+
         let (height, destructible) = match structure_type {
             "large" => (20.0, false),
             "destructible" => (20.0, true),
-            _ => (10.0, false), // barrier / small
+            _ => (10.0, false),
         };
         let wall = Wall {
             cx: x,
             cz: z,
-            hw: 10.0, // length 20 / 2
-            hd: 1.0,  // thickness 2 / 2
+            hw: 10.0,
+            hd: 1.0,
             rot,
             y_min: 0.0,
             y_max: height,
@@ -114,17 +107,13 @@ impl LobbyManager {
         }
     }
 
-    /// Record a bullet hole on the destructible wall nearest to (wall_x, wall_z).
-    /// Returns true if a hole was added (matched a destructible wall under the max
-    /// of 2 holes), false otherwise. `world_y` is absolute height (matches the
-    /// occlusion test's `ly`); `local_x` is along the wall's width.
     pub fn add_wall_hole(&self, lobby_id: &str, wall_x: f32, wall_z: f32, local_x: f32, world_y: f32, radius: f32) -> bool {
         use crate::game::collision::Hole;
         const MAX_HOLES: usize = 2;
-        const MATCH_DIST2: f32 = 4.0; // walls are 20-grid snapped; 2 units tolerance is plenty
+        const MATCH_DIST2: f32 = 4.0;
         let mut lobbies = self.lobbies.lock().unwrap();
         let lobby = match lobbies.get_mut(lobby_id) { Some(l) => l, None => return false };
-        // Find the closest destructible wall to the reported center.
+
         let mut best: Option<(usize, f32)> = None;
         for (i, w) in lobby.structures.iter().enumerate() {
             if !w.destructible { continue; }
@@ -142,7 +131,6 @@ impl LobbyManager {
         false
     }
 
-    /// Clear all player-placed walls (e.g. halftime / map reset).
     pub fn clear_structures(&self, lobby_id: &str) {
         let mut lobbies = self.lobbies.lock().unwrap();
         if let Some(lobby) = lobbies.get_mut(lobby_id) {
@@ -150,12 +138,9 @@ impl LobbyManager {
         }
     }
 
-    /// Is the shot from `shooter_id` to `target_id` blocked by a wall? Uses the
-    /// players' current server positions (+ eye height) and all walls (map +
-    /// placed). Returns false if either player is missing (don't over-reject).
     pub fn shot_is_blocked(&self, lobby_id: &str, shooter_id: &str, target_id: &str) -> bool {
         use crate::game::collision::shot_blocked;
-        const EYE: f32 = 8.0; // approx eye height above the player's stored y (feet)
+        const EYE: f32 = 8.0;
         let lobbies = self.lobbies.lock().unwrap();
         if let Some(lobby) = lobbies.get(lobby_id) {
             let s = match lobby.players.get(shooter_id) { Some(p) => p, None => return false };
@@ -171,7 +156,7 @@ impl LobbyManager {
         let mut lobbies = self.lobbies.lock().unwrap();
         if let Some(lobby) = lobbies.get_mut(lobby_id) {
             lobby.remove_player(player_id);
-            
+
             if matches!(lobby.game_mode, GameMode::TeamVsTeam) && lobby.players.is_empty() {
                 lobbies.remove(lobby_id);
             }
@@ -265,14 +250,14 @@ impl LobbyManager {
     pub fn cleanup_empty_team_lobbies(&self) {
         let mut lobbies = self.lobbies.lock().unwrap();
         let dm_id = self.deathmatch_lobby_id.lock().unwrap();
-        
+
         lobbies.retain(|id, lobby| {
             if let Some(dm_lobby_id) = &*dm_id {
                 if id == dm_lobby_id {
                     return true;
                 }
             }
-            
+
             if matches!(lobby.game_mode, GameMode::TeamVsTeam) {
                 !lobby.players.is_empty()
             } else {
@@ -280,7 +265,7 @@ impl LobbyManager {
             }
         });
     }
-    
+
     pub fn plant_bomb(&self, lobby_id: &str, player_id: &str, position_x: Option<f32>, position_z: Option<f32>) -> Option<(f32, f32)> {
         let mut lobbies = self.lobbies.lock().unwrap();
         if let Some(lobby) = lobbies.get_mut(lobby_id) {
@@ -289,7 +274,7 @@ impl LobbyManager {
             None
         }
     }
-    
+
     pub fn defuse_bomb(&self, lobby_id: &str, player_id: &str) -> Option<TeamColor> {
         let mut lobbies = self.lobbies.lock().unwrap();
         if let Some(lobby) = lobbies.get_mut(lobby_id) {
@@ -307,7 +292,7 @@ impl LobbyManager {
             None
         }
     }
-    
+
     pub fn get_bomb_carrier(&self, lobby_id: &str) -> Option<String> {
         let lobbies = self.lobbies.lock().unwrap();
         if let Some(lobby) = lobbies.get(lobby_id) {
@@ -316,18 +301,18 @@ impl LobbyManager {
             None
         }
     }
-    
+
     pub fn can_respawn(&self, lobby_id: &str) -> bool {
         let lobbies = self.lobbies.lock().unwrap();
         if let Some(lobby) = lobbies.get(lobby_id) {
-            // Allow respawn only in deathmatch or during round end/build phase
+
             matches!(lobby.game_mode, GameMode::Deathmatch) ||
             matches!(lobby.game_state, GameState::RoundEnd | GameState::BuildPhase | GameState::WaitingForPlayers)
         } else {
             false
         }
     }
-    
+
     pub fn check_team_elimination(&self, lobby_id: &str) -> Option<TeamColor> {
         let mut lobbies = self.lobbies.lock().unwrap();
         if let Some(lobby) = lobbies.get_mut(lobby_id) {
@@ -336,7 +321,7 @@ impl LobbyManager {
             None
         }
     }
-    
+
     pub fn end_round(&self, lobby_id: &str, winner: TeamColor, reason: &str) {
         let mut lobbies = self.lobbies.lock().unwrap();
         if let Some(lobby) = lobbies.get_mut(lobby_id) {
@@ -349,7 +334,7 @@ impl LobbyManager {
             lobby.end_round(winner, round_reason);
         }
     }
-    
+
     pub fn get_team_scores(&self, lobby_id: &str) -> (i32, i32) {
         let lobbies = self.lobbies.lock().unwrap();
         if let Some(lobby) = lobbies.get(lobby_id) {
@@ -359,25 +344,18 @@ impl LobbyManager {
         }
     }
 
-    /// If the match just ended (a team hit 7 wins), return the winner once
-    /// ("orange"/"red") and mark it announced. Used by the round-restart paths to
-    /// announce the match instead of starting another round.
     pub fn take_match_end_winner(&self, lobby_id: &str) -> Option<&'static str> {
         let mut lobbies = self.lobbies.lock().unwrap();
         lobbies.get_mut(lobby_id).and_then(|l| l.take_match_end_winner())
     }
 
-    /// Read-only: is this lobby in the MatchEnd state? (Does NOT consume the
-    /// announce flag — used to decide whether to schedule another round.)
     pub fn is_match_over(&self, lobby_id: &str) -> bool {
         let lobbies = self.lobbies.lock().unwrap();
         lobbies.get(lobby_id)
             .map(|l| matches!(l.game_state, crate::game::lobby::GameState::MatchEnd))
             .unwrap_or(false)
     }
-    
-    // Returns true if the sides were switched (halftime), so the caller can
-    // broadcast a map reset.
+
     pub fn start_new_round(&self, lobby_id: &str) -> bool {
         let mut lobbies = self.lobbies.lock().unwrap();
         if let Some(lobby) = lobbies.get_mut(lobby_id) {
@@ -386,7 +364,7 @@ impl LobbyManager {
             false
         }
     }
-    
+
     pub fn get_round_number(&self, lobby_id: &str) -> i32 {
         let lobbies = self.lobbies.lock().unwrap();
         if let Some(lobby) = lobbies.get(lobby_id) {
@@ -395,15 +373,15 @@ impl LobbyManager {
             0
         }
     }
-    
+
     pub fn check_all_build_phase_timeouts(&self, broadcaster: &crate::network::MessageBroadcaster) {
         let mut lobbies = self.lobbies.lock().unwrap();
         let lobby_ids: Vec<String> = lobbies.keys().cloned().collect();
-        
+
         for lobby_id in lobby_ids {
             if let Some(lobby) = lobbies.get_mut(&lobby_id) {
                 if lobby.check_build_phase_timeout() {
-                    // Build phase ended, notify all players in lobby
+
                     let msg = crate::network::messages::ServerMessage::BuildPhaseEnd {
                         round_time: crate::game::lobby::ROUND_TIMER_SECS,
                     };
@@ -413,20 +391,19 @@ impl LobbyManager {
             }
         }
     }
-    
+
     pub fn check_all_bomb_explosions(&self, broadcaster: &crate::network::MessageBroadcaster) {
         let mut lobbies = self.lobbies.lock().unwrap();
         let lobby_ids: Vec<String> = lobbies.keys().cloned().collect();
-        
+
         for lobby_id in lobby_ids {
             if let Some(lobby) = lobbies.get_mut(&lobby_id) {
                 if lobby.check_bomb_explosion() {
-                    // First send bomb exploded message for animation
+
                     let exploded_msg = crate::network::messages::ServerMessage::BombExploded;
                     broadcaster.broadcast_to_lobby(&lobby_id, &exploded_msg, None);
                     log::info!("Bomb exploded in lobby {}", lobby_id);
-                    
-                    // Then send round end after a brief delay for animation
+
                     let (orange_score, red_score) = (lobby.orange_score, lobby.red_score);
                     let winner = match lobby.attacking_team {
                         crate::game::TeamColor::Orange => "orange",
@@ -440,8 +417,7 @@ impl LobbyManager {
                     };
                     broadcaster.broadcast_to_lobby(&lobby_id, &msg, None);
                     log::info!("Round ended in lobby {}, {} team wins", lobby_id, winner);
-                    
-                    // Send money updates to all players after round end
+
                     for player in lobby.players.values() {
                         let money_msg = crate::network::messages::ServerMessage::MoneyUpdate {
                             player_id: player.id.clone(),
@@ -454,10 +430,7 @@ impl LobbyManager {
             }
         }
     }
-    
-    /// Ends any round where the attackers ran out of time without planting (the
-    /// defenders win). Mirrors check_all_bomb_explosions' broadcast shape: RoundEnd
-    /// + money updates. The actual round restart is handled by check_all_round_restarts.
+
     pub fn check_all_round_timeouts(&self, broadcaster: &crate::network::MessageBroadcaster) {
         let mut lobbies = self.lobbies.lock().unwrap();
         let lobby_ids: Vec<String> = lobbies.keys().cloned().collect();
@@ -479,7 +452,6 @@ impl LobbyManager {
                     broadcaster.broadcast_to_lobby(&lobby_id, &msg, None);
                     log::info!("Round timed out in lobby {}, {} (defenders) win", lobby_id, winner);
 
-                    // Send money updates to all players after round end.
                     for player in lobby.players.values() {
                         let money_msg = crate::network::messages::ServerMessage::MoneyUpdate {
                             player_id: player.id.clone(),
@@ -492,8 +464,6 @@ impl LobbyManager {
         }
     }
 
-    /// Broadcast a MatchEnd message once when a team reaches 7 round wins. The
-    /// client shows the winner animation and returns players to the landing page.
     pub fn check_all_match_ends(&self, broadcaster: &crate::network::MessageBroadcaster) {
         let mut lobbies = self.lobbies.lock().unwrap();
         let lobby_ids: Vec<String> = lobbies.keys().cloned().collect();
@@ -520,15 +490,14 @@ impl LobbyManager {
             if let Some(lobby) = lobbies.get_mut(&lobby_id) {
                 let (restarted, sides_switched) = lobby.check_round_restart();
                 if restarted {
-                    // Halftime: clear all structures built in the first half
-                    // (client meshes via MapReset + server occlusion walls).
+
                     if sides_switched {
                         lobby.structures.clear();
                         let reset_msg = crate::network::messages::ServerMessage::MapReset;
                         broadcaster.broadcast_to_lobby(&lobby_id, &reset_msg, None);
                         log::info!("Halftime map reset broadcast for lobby {}", lobby_id);
                     }
-                    // Send player respawned messages for all players
+
                     for player in lobby.players.values() {
                         let respawn_msg = crate::network::messages::ServerMessage::PlayerRespawned {
                             player: player.clone()
@@ -536,10 +505,9 @@ impl LobbyManager {
                         broadcaster.broadcast_to_lobby(&lobby_id, &respawn_msg, None);
                     }
 
-                    // New round started, notify all players
                     let round_msg = crate::network::messages::ServerMessage::RoundStart {
                         round_number: lobby.round_number,
-                        buy_time: 30, // 30 seconds build phase
+                        buy_time: 30,
                         orange_score: lobby.orange_score,
                         red_score: lobby.red_score,
                         attacking_team: match lobby.attacking_team {
@@ -549,8 +517,7 @@ impl LobbyManager {
                     };
                     broadcaster.broadcast_to_lobby(&lobby_id, &round_msg, None);
                     log::info!("Round {} started in lobby {}", lobby.round_number, lobby_id);
-                    
-                    // Send money updates to all players at round start
+
                     for player in lobby.players.values() {
                         let money_msg = crate::network::messages::ServerMessage::MoneyUpdate {
                             player_id: player.id.clone(),
@@ -560,10 +527,6 @@ impl LobbyManager {
                         log::info!("Round start: Sent money update to player {}: ${}", player.id, player.money);
                     }
 
-                    // Give the bomb to the round's chosen attacker. Without this
-                    // the bomb is never granted on rounds that restart via this
-                    // tick path (e.g. rounds ended by bomb explosion), so the new
-                    // attacker spawns with no bomb.
                     if let Some(bomb_carrier_id) = lobby.bomb_carrier_id.clone() {
                         let bomb_msg = crate::network::messages::ServerMessage::GiveBomb {
                             player_id: bomb_carrier_id.clone(),
@@ -575,7 +538,7 @@ impl LobbyManager {
             }
         }
     }
-    
+
     pub fn drop_bomb(&self, lobby_id: &str, player_id: &str) -> Option<(f32, f32, f32)> {
         let mut lobbies = self.lobbies.lock().unwrap();
         if let Some(lobby) = lobbies.get_mut(lobby_id) {
@@ -584,12 +547,12 @@ impl LobbyManager {
             None
         }
     }
-    
+
     pub fn pickup_bomb(&self, lobby_id: &str, player_id: &str) -> Option<String> {
         let mut lobbies = self.lobbies.lock().unwrap();
         if let Some(lobby) = lobbies.get_mut(lobby_id) {
             if lobby.pickup_bomb(player_id) {
-                // Return player name
+
                 lobby.players.get(player_id).map(|p| p.name.clone())
             } else {
                 None
@@ -598,12 +561,12 @@ impl LobbyManager {
             None
         }
     }
-    
+
     pub fn get_attacking_team(&self, lobby_id: &str) -> Option<crate::game::TeamColor> {
         let lobbies = self.lobbies.lock().unwrap();
         lobbies.get(lobby_id).map(|lobby| lobby.attacking_team.clone())
     }
-    
+
     pub fn update_player_money(&self, lobby_id: &str, player_id: &str, new_money: i32) {
         let mut lobbies = self.lobbies.lock().unwrap();
         if let Some(lobby) = lobbies.get_mut(lobby_id) {

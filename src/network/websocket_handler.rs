@@ -21,7 +21,7 @@ impl WebSocketHandler {
     ) -> Result<Self, Box<dyn std::error::Error>> {
         let ws_stream = accept_async(stream).await?;
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<String>();
-        
+
         message_broadcaster.add_connection(player_id.clone(), tx);
 
         let welcome_msg = ServerMessage::Welcome {
@@ -29,12 +29,12 @@ impl WebSocketHandler {
             lobby_id: "connecting".to_string(),
             game_mode: "connecting".to_string(),
         };
-        
+
         let (mut ws_sender, ws_receiver) = ws_stream.split();
-        
+
         let welcome_json = serde_json::to_string(&welcome_msg).unwrap();
         ws_sender.send(Message::Text(welcome_json)).await?;
-        
+
         tokio::spawn(async move {
             while let Some(msg) = rx.recv().await {
                 if ws_sender.send(Message::Text(msg)).await.is_err() {
@@ -56,8 +56,7 @@ impl WebSocketHandler {
         while let Some(msg) = self.ws_receiver.next().await {
             match msg {
                 Ok(Message::Text(text)) => {
-                    // Temporarily at info so we can confirm on prod that client
-                    // frames (create_team_lobby / join_team) actually arrive.
+
                     log::info!("Raw message from {}: {}", self.player_id, text);
                     match serde_json::from_str::<ClientMessage>(&text) {
                         Ok(client_msg) => {

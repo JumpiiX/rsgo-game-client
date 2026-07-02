@@ -21,7 +21,7 @@ pub enum ClientMessage {
     #[serde(rename = "respawn")]
     Respawn,
     #[serde(rename = "plant_bomb")]
-    PlantBomb { 
+    PlantBomb {
         #[serde(default)] position_x: Option<f32>,
         #[serde(default)] position_z: Option<f32>
     },
@@ -33,9 +33,7 @@ pub enum ClientMessage {
     PickupBomb,
     #[serde(rename = "place_structure")]
     PlaceStructure { structure_type: String, x: f32, y: f32, z: f32 },
-    // A bullet punched a hole in a destructible wall. wall_x/wall_z identify the
-    // wall (its center); local_x is along the wall's width, world_y is the hit's
-    // absolute height. The server records it + broadcasts so all clients agree.
+
     #[serde(rename = "wall_hit")]
     WallHit { wall_x: f32, wall_z: f32, local_x: f32, world_y: f32, radius: f32 },
 }
@@ -48,10 +46,10 @@ pub enum ServerMessage {
     #[serde(rename = "team_lobby_created")]
     TeamLobbyCreated { lobby_id: String },
     #[serde(rename = "team_update")]
-    TeamUpdate { 
-        orange_team: Vec<TeamPlayer>, 
+    TeamUpdate {
+        orange_team: Vec<TeamPlayer>,
         red_team: Vec<TeamPlayer>,
-        can_start: bool 
+        can_start: bool
     },
     #[serde(rename = "game_started")]
     GameStarted { game_mode: String },
@@ -76,16 +74,16 @@ pub enum ServerMessage {
     #[serde(rename = "scoreboard_update")]
     ScoreboardUpdate { players: Vec<ScoreboardPlayer> },
     #[serde(rename = "round_start")]
-    RoundStart { 
-        round_number: i32, 
+    RoundStart {
+        round_number: i32,
         buy_time: i32,
         orange_score: i32,
         red_score: i32,
         attacking_team: String,
     },
     #[serde(rename = "round_end")]
-    RoundEnd { 
-        winner: String, 
+    RoundEnd {
+        winner: String,
         reason: String,
         orange_score: i32,
         red_score: i32,
@@ -93,14 +91,14 @@ pub enum ServerMessage {
     #[serde(rename = "build_phase_end")]
     BuildPhaseEnd { round_time: u64 },
     #[serde(rename = "bomb_planted")]
-    BombPlanted { 
+    BombPlanted {
         player_id: String,
         timer: i32,
         position_x: f32,
         position_z: f32,
     },
     #[serde(rename = "bomb_defused")]
-    BombDefused { 
+    BombDefused {
         player_id: String,
     },
     #[serde(rename = "bomb_exploded")]
@@ -110,7 +108,7 @@ pub enum ServerMessage {
         player_id: String,
         structure_type: String,
         x: f32,
-        y: f32,  // Will store rotation
+        y: f32,
         z: f32,
     },
     #[serde(rename = "give_bomb")]
@@ -134,8 +132,7 @@ pub enum ServerMessage {
     },
     #[serde(rename = "map_reset")]
     MapReset,
-    // Authoritative bullet hole on a destructible wall — broadcast to every
-    // client so they all render the same holes (and shots pass through them).
+
     #[serde(rename = "wall_hole")]
     WallHole { wall_x: f32, wall_z: f32, local_x: f32, world_y: f32, radius: f32 },
 }
