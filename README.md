@@ -1,49 +1,40 @@
-# RSGO Backend
+<h1 align="center">RSGO&nbsp;·&nbsp;Backend</h1>
+
+<p align="center"><b>The authoritative game server.</b><br/>
+Real-time multiplayer, written from scratch in Rust.</p>
+
+<p align="center"><a href="https://rsgo.io"><b>Play at rsgo.io →</b></a></p>
 
 <p align="center">
-  <a href="https://github.com/rust-lang/cargo">
-    <img src="https://img.shields.io/badge/cargo-project-orange?style=flat&logo=rust" alt="Cargo Project" />
-  </a>
-  <a href="https://tokio.rs/">
-    <img src="https://img.shields.io/badge/async-tokio-blue?style=flat" alt="Async with Tokio" />
-  </a>
-  <a href="https://github.com/snapview/tokio-tungstenite">
-    <img src="https://img.shields.io/badge/websocket-tungstenite-green?style=flat" alt="WebSocket with Tungstenite" />
-  </a>
-  <a href="https://github.com/serde-rs/serde">
-    <img src="https://img.shields.io/badge/serialization-serde-red?style=flat" alt="Serialization with Serde" />
-  </a>
-  <br />
-  <a href="https://github.com/uuid-rs/uuid">
-    <img src="https://img.shields.io/badge/ids-uuid-purple?style=flat" alt="IDs with UUID" />
-  </a>
-  <a href="https://github.com/rust-lang/log">
-    <img src="https://img.shields.io/badge/logging-log-yellow?style=flat" alt="Logging" />
-  </a>
+  <img src="https://img.shields.io/badge/-%23ef4e23-ef4e23?style=flat&label=RSGO&labelColor=1a2447" alt="RSGO" />
+  <img src="https://img.shields.io/badge/built%20in-rust-1a2447?style=flat&logo=rust&labelColor=ef4e23" alt="Rust" />
+  <img src="https://img.shields.io/badge/async-tokio-1a2447?style=flat&labelColor=11182f" alt="Tokio" />
+  <img src="https://img.shields.io/badge/transport-websocket-1a2447?style=flat&labelColor=11182f" alt="WebSocket" />
+  <img src="https://img.shields.io/badge/serialization-serde-1a2447?style=flat&labelColor=11182f" alt="Serde" />
 </p>
 
-Multiplayer FPS game server built from scratch in Rust. Handles real-time player connections, game state, and combat mechanics over WebSocket.
+---
 
-## Architecture
+## What is RSGO?
 
-**Core Server** (`src/core/`)
-- Game server orchestration and connection handling
-- Periodic tasks for shield regeneration and scoreboard updates
+A competitive 3D multiplayer FPS with one twist: **you don't buy guns, you buy the map.** Each round the players build the battlefield themselves, so there's nothing fixed to memorise. **Skill over study.**
 
-**Network Layer** (`src/network/`)
-- WebSocket connection management
-- JSON message protocol for client communication
-- Message broadcasting to all connected players
+This repository is the **game server** — the single source of truth for every match. Clients send inputs; the server decides what's real: positions, damage, deaths, economy, the round and bomb state machine, and who won.
 
-**Game Logic** (`src/game/`)
-- Player state management (health, shields, position, kills)
-- Combat system with damage calculation
-- Spawn system for player positioning
-- Message handling for game events
+## What it handles
 
-**Player Management**
-- Health/shield system with regeneration mechanics
-- Death/respawn cycle with proper state validation
-- Kill tracking and scoreboard maintenance
+- **Real-time connections** — async WebSocket, many players at once, JSON message protocol.
+- **Authoritative state** — health & shields, hits & deaths, kills & scoreboard, all validated server-side.
+- **Round lifecycle** — waiting → build phase → play → round end, with team switch and match end.
+- **Bomb mechanics** — plant, defuse, explosion timers and win conditions.
+- **In-memory & fast** — lobbies live in memory; no database in the loop.
 
-Runs on port 6969 with async Rust for handling concurrent player connections.
+## Under the hood
+
+| Area | What lives here |
+|------|-----------------|
+| `src/core/` | Server orchestration & the periodic game tick |
+| `src/network/` | WebSocket handling, protocol, broadcasting |
+| `src/game/` | Lobbies, rounds, players, combat, spawns, collision |
+
+Built on **Tokio** async, **tokio-tungstenite** for WebSocket, and **Serde** for the JSON protocol shared with the client.
