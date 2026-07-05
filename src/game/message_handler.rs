@@ -376,20 +376,25 @@ impl MessageHandler {
                 );
 
                 log::info!("Player {} respawned at ({}, {}, {})", player_id, player.x, player.y, player.z);
+
+                // Refresh the scoreboard so this player no longer shows as dead.
+                self.broadcast_scoreboard(&lobby_id);
             }
         }
     }
 
     fn broadcast_scoreboard(&self, lobby_id: &str) {
-        log::info!("Broadcasting scoreboard update for lobby {}", lobby_id);
-        let scoreboard_data = self.lobby_manager.get_lobby_scoreboard(lobby_id);
-        log::info!("Scoreboard data: {:?}", scoreboard_data);
-        let scoreboard_message = ServerMessage::ScoreboardUpdate {
-            players: scoreboard_data,
-        };
-
-        self.message_broadcaster.broadcast_to_lobby(lobby_id, &scoreboard_message, None);
-        log::info!("Scoreboard broadcast complete for lobby {}", lobby_id);
+        // Send each player a scoreboard filtered to their own perspective, so
+        // only their own team's money is included (enemy economy is never sent).
+        let players = self.lobby_manager.get_lobby_players(lobby_id);
+        for player in &players {
+            let viewer_team = player.team.as_deref();
+            let scoreboard_data = self.lobby_manager.get_lobby_scoreboard_for(lobby_id, viewer_team);
+            let scoreboard_message = ServerMessage::ScoreboardUpdate {
+                players: scoreboard_data,
+            };
+            self.message_broadcaster.send_to_player(&player.id, &scoreboard_message);
+        }
     }
 
     pub fn handle_player_disconnect(&self, player_id: &str) {
@@ -495,6 +500,10 @@ impl MessageHandler {
             };
 
             self.message_broadcaster.broadcast_to_lobby(&lobby_id, &msg, Some(player_id));
+
+            // Refresh the scoreboard so a teammate's money reflects the wall
+            // they just bought (live update while holding Tab in build phase).
+            self.broadcast_scoreboard(&lobby_id);
         }
     }
 
@@ -545,6 +554,9 @@ impl MessageHandler {
             self.message_broadcaster.send_to_player(&player.id, &money_msg);
             log::info!("Sent money update after round end to player {}: ${}", player.id, player.money);
         }
+        // Refresh the scoreboard so its money reflects the round-end bonus that
+        // was just applied (otherwise it keeps the pre-bonus snapshot).
+        self.broadcast_scoreboard(lobby_id);
 
         if self.lobby_manager.is_match_over(lobby_id) {
             if let Some(winner) = self.lobby_manager.take_match_end_winner(lobby_id) {

@@ -142,6 +142,13 @@ pub struct ScoreboardPlayer {
     pub id: String,
     pub name: String,
     pub kills: i32,
+    pub deaths: i32,
+    pub team: Option<String>,
+    // money is only Some(..) for players on the viewer's own team; None for
+    // enemies so their economy is never sent over the network (cheat-proof).
+    pub money: Option<i32>,
+    pub alive: bool,
+    pub has_bomb: bool,
 }
 
 #[derive(Debug, Serialize, Deserialize)]

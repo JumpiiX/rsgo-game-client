@@ -247,6 +247,28 @@ impl LobbyManager {
         }
     }
 
+    // Scoreboard as seen by `viewer_team` — only that team's money is included.
+    pub fn get_lobby_scoreboard_for(&self, lobby_id: &str, viewer_team: Option<&str>) -> Vec<crate::network::messages::ScoreboardPlayer> {
+        let lobbies = self.lobbies.lock().unwrap();
+        if let Some(lobby) = lobbies.get(lobby_id) {
+            lobby.get_scoreboard_data_for(viewer_team)
+        } else {
+            Vec::new()
+        }
+    }
+
+    // Send each player their own team-filtered scoreboard, using an
+    // already-borrowed lobby (does NOT re-lock self.lobbies — safe to call from
+    // inside the check_all_* loops that already hold the lock). Call this after
+    // money changes (round-end bonuses) so the scoreboard's money isn't stale.
+    fn broadcast_scoreboard_for_lobby(lobby: &Lobby, broadcaster: &crate::network::MessageBroadcaster) {
+        for player in lobby.players.values() {
+            let scoreboard = lobby.get_scoreboard_data_for(player.team.as_deref());
+            let msg = crate::network::messages::ServerMessage::ScoreboardUpdate { players: scoreboard };
+            broadcaster.send_to_player(&player.id, &msg);
+        }
+    }
+
     pub fn cleanup_empty_team_lobbies(&self) {
         let mut lobbies = self.lobbies.lock().unwrap();
         let dm_id = self.deathmatch_lobby_id.lock().unwrap();
@@ -426,6 +448,7 @@ impl LobbyManager {
                         broadcaster.send_to_player(&player.id, &money_msg);
                         log::info!("Sent money update to player {}: ${}", player.id, player.money);
                     }
+                    Self::broadcast_scoreboard_for_lobby(lobby, broadcaster);
                 }
             }
         }
@@ -459,6 +482,7 @@ impl LobbyManager {
                         };
                         broadcaster.send_to_player(&player.id, &money_msg);
                     }
+                    Self::broadcast_scoreboard_for_lobby(lobby, broadcaster);
                 }
             }
         }
@@ -526,6 +550,7 @@ impl LobbyManager {
                         broadcaster.send_to_player(&player.id, &money_msg);
                         log::info!("Round start: Sent money update to player {}: ${}", player.id, player.money);
                     }
+                    Self::broadcast_scoreboard_for_lobby(lobby, broadcaster);
 
                     if let Some(bomb_carrier_id) = lobby.bomb_carrier_id.clone() {
                         let bomb_msg = crate::network::messages::ServerMessage::GiveBomb {

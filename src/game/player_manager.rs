@@ -97,6 +97,11 @@ impl PlayerManager {
                 id: player.id.clone(),
                 name: player.name.clone(),
                 kills: player.kills,
+                deaths: player.deaths,
+                team: player.team.clone(),
+                money: None,
+                alive: player.alive,
+                has_bomb: player.has_bomb,
             })
             .collect();
 

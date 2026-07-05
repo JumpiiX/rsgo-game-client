@@ -74,6 +74,7 @@ impl Player {
         if self.health <= 0 {
             self.health = 0;
             self.alive = false;
+            self.deaths += 1;
             true
         } else {
             false

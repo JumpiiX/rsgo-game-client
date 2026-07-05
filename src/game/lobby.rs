@@ -640,12 +640,31 @@ impl Lobby {
     }
 
     pub fn get_scoreboard_data(&self) -> Vec<ScoreboardPlayer> {
+        self.get_scoreboard_data_for(None)
+    }
+
+    // Build the scoreboard from the perspective of `viewer_team`. Money is only
+    // filled in for players on that team; enemies get money: None so their
+    // economy is never transmitted. viewer_team = None reveals no money (used
+    // for the plain broadcast / deathmatch).
+    pub fn get_scoreboard_data_for(&self, viewer_team: Option<&str>) -> Vec<ScoreboardPlayer> {
         let mut scoreboard_players: Vec<ScoreboardPlayer> = self.players
             .values()
-            .map(|player| ScoreboardPlayer {
-                id: player.id.clone(),
-                name: player.name.clone(),
-                kills: player.kills,
+            .map(|player| {
+                let same_team = match (viewer_team, player.team.as_deref()) {
+                    (Some(vt), Some(pt)) => vt == pt,
+                    _ => false,
+                };
+                ScoreboardPlayer {
+                    id: player.id.clone(),
+                    name: player.name.clone(),
+                    kills: player.kills,
+                    deaths: player.deaths,
+                    team: player.team.clone(),
+                    money: if same_team { Some(player.money) } else { None },
+                    alive: player.alive,
+                    has_bomb: player.has_bomb,
+                }
             })
             .collect();
 
