@@ -257,17 +257,19 @@ impl Lobby {
             }
         }
 
-        log::info!("Round number check: {} == 1? {}", self.round_number, self.round_number == 1);
-        if self.round_number == 1 {
-            log::info!("FIRST ROUND - Resetting all players to $800");
+        // Reset economy at match start (round 1) AND at halftime (round 7,
+        // when sides switch) so both halves begin economically fair, like CS:GO.
+        let economy_reset = self.round_number == 1 || self.round_number == 7;
+        if economy_reset {
+            log::info!("ECONOMY RESET (round {}) - Resetting all players to $800", self.round_number);
             for player in self.players.values_mut() {
                 let old_money = player.money;
                 player.money = 800;
-                log::info!("Round 1: Player {} money reset from ${} to $800", player.id, old_money);
+                log::info!("Round {}: Player {} money reset from ${} to $800", self.round_number, player.id, old_money);
             }
         } else {
 
-            log::info!("NOT FIRST ROUND - Keeping player money from previous round");
+            log::info!("Keeping player money from previous round");
             for player in self.players.values() {
                 log::info!("Round {}: Player {} KEEPING ${} at round start",
                     self.round_number, player.id, player.money);
