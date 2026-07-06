@@ -235,7 +235,7 @@ impl MessageHandler {
                     let bomb_msg = ServerMessage::GiveBomb {
                         player_id: bomb_carrier_id.clone(),
                     };
-                    self.message_broadcaster.send_to_player(&bomb_carrier_id, &bomb_msg);
+                    self.message_broadcaster.broadcast_to_lobby(&lobby_id, &bomb_msg, None);
                     log::info!("Bomb given to player {}", bomb_carrier_id);
                 }
 

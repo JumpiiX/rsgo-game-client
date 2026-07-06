@@ -551,7 +551,7 @@ impl LobbyManager {
                         let bomb_msg = crate::network::messages::ServerMessage::GiveBomb {
                             player_id: bomb_carrier_id.clone(),
                         };
-                        broadcaster.send_to_player(&bomb_carrier_id, &bomb_msg);
+                        broadcaster.broadcast_to_lobby(&lobby_id, &bomb_msg, None);
                         log::info!("Round start: gave bomb to {}", bomb_carrier_id);
                     }
                 }
