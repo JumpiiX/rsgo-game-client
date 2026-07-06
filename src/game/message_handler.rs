@@ -377,15 +377,13 @@ impl MessageHandler {
 
                 log::info!("Player {} respawned at ({}, {}, {})", player_id, player.x, player.y, player.z);
 
-                // Refresh the scoreboard so this player no longer shows as dead.
                 self.broadcast_scoreboard(&lobby_id);
             }
         }
     }
 
     fn broadcast_scoreboard(&self, lobby_id: &str) {
-        // Send each player a scoreboard filtered to their own perspective, so
-        // only their own team's money is included (enemy economy is never sent).
+
         let players = self.lobby_manager.get_lobby_players(lobby_id);
         for player in &players {
             let viewer_team = player.team.as_deref();
@@ -501,8 +499,6 @@ impl MessageHandler {
 
             self.message_broadcaster.broadcast_to_lobby(&lobby_id, &msg, Some(player_id));
 
-            // Refresh the scoreboard so a teammate's money reflects the wall
-            // they just bought (live update while holding Tab in build phase).
             self.broadcast_scoreboard(&lobby_id);
         }
     }
@@ -554,8 +550,7 @@ impl MessageHandler {
             self.message_broadcaster.send_to_player(&player.id, &money_msg);
             log::info!("Sent money update after round end to player {}: ${}", player.id, player.money);
         }
-        // Refresh the scoreboard so its money reflects the round-end bonus that
-        // was just applied (otherwise it keeps the pre-bonus snapshot).
+
         self.broadcast_scoreboard(lobby_id);
 
         if self.lobby_manager.is_match_over(lobby_id) {

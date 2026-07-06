@@ -257,8 +257,6 @@ impl Lobby {
             }
         }
 
-        // Reset economy at match start (round 1) AND at halftime (round 7,
-        // when sides switch) so both halves begin economically fair, like CS:GO.
         let economy_reset = self.round_number == 1 || self.round_number == 7;
         if economy_reset {
             log::info!("ECONOMY RESET (round {}) - Resetting all players to $800", self.round_number);
@@ -645,10 +643,6 @@ impl Lobby {
         self.get_scoreboard_data_for(None)
     }
 
-    // Build the scoreboard from the perspective of `viewer_team`. Money is only
-    // filled in for players on that team; enemies get money: None so their
-    // economy is never transmitted. viewer_team = None reveals no money (used
-    // for the plain broadcast / deathmatch).
     pub fn get_scoreboard_data_for(&self, viewer_team: Option<&str>) -> Vec<ScoreboardPlayer> {
         let mut scoreboard_players: Vec<ScoreboardPlayer> = self.players
             .values()

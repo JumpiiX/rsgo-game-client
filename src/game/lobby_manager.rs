@@ -247,7 +247,6 @@ impl LobbyManager {
         }
     }
 
-    // Scoreboard as seen by `viewer_team` — only that team's money is included.
     pub fn get_lobby_scoreboard_for(&self, lobby_id: &str, viewer_team: Option<&str>) -> Vec<crate::network::messages::ScoreboardPlayer> {
         let lobbies = self.lobbies.lock().unwrap();
         if let Some(lobby) = lobbies.get(lobby_id) {
@@ -257,10 +256,6 @@ impl LobbyManager {
         }
     }
 
-    // Send each player their own team-filtered scoreboard, using an
-    // already-borrowed lobby (does NOT re-lock self.lobbies — safe to call from
-    // inside the check_all_* loops that already hold the lock). Call this after
-    // money changes (round-end bonuses) so the scoreboard's money isn't stale.
     fn broadcast_scoreboard_for_lobby(lobby: &Lobby, broadcaster: &crate::network::MessageBroadcaster) {
         for player in lobby.players.values() {
             let scoreboard = lobby.get_scoreboard_data_for(player.team.as_deref());
